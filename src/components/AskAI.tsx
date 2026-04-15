@@ -117,6 +117,7 @@ export default function AskAI() {
       {/* Floating button */}
       {!open && (
         <button
+          data-tour="askai"
           onClick={() => setOpen(true)}
           style={{
             position: 'fixed',

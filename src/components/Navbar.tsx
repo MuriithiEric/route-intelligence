@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
-export default function Navbar() {
+interface NavbarProps {
+  onTourClick: () => void;
+}
+
+export default function Navbar({ onTourClick }: NavbarProps) {
   const [syncTime, setSyncTime] = useState(new Date());
 
   useEffect(() => {
@@ -75,8 +79,36 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Right: Live indicator */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* Right: Tour button + Live indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button
+          onClick={onTourClick}
+          title="Take a tour"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '4px 10px',
+            borderRadius: 6,
+            border: '1px solid rgba(0,0,0,0.1)',
+            background: '#F9FAFB',
+            color: '#1E3A5F',
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'Inter, system-ui, sans-serif',
+            letterSpacing: '0.02em',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <circle cx="6" cy="6" r="5.5" stroke="#1E3A5F" strokeWidth="1.2"/>
+            <text x="6" y="9" textAnchor="middle" fill="#1E3A5F" fontSize="7" fontWeight="700" fontFamily="Inter, sans-serif">?</text>
+          </svg>
+          Tour
+        </button>
+
+        <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.08)' }} />
+
         <div
           className="pulse-dot"
           style={{

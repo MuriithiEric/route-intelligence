@@ -96,3 +96,92 @@ html, body, #root {
 .leaflet-cluster-anim .leaflet-marker-icon, .leaflet-cluster-anim .leaflet-marker-shadow {
   transition: transform 0.3s ease-out, opacity 0.3s ease-in;
 }
+
+/* ── Driver.js tour overrides ── */
+.kri-tour-popover {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.22) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  max-width: 340px !important;
+  border: none !important;
+}
+
+.kri-tour-popover .driver-popover-title {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #1E3A5F !important;
+  padding: 16px 16px 6px !important;
+  margin: 0 !important;
+  background: #FFFFFF !important;
+  border-bottom: none !important;
+}
+
+.kri-tour-popover .driver-popover-description {
+  font-size: 12px !important;
+  color: #4B5563 !important;
+  line-height: 1.6 !important;
+  padding: 0 16px 14px !important;
+  margin: 0 !important;
+  background: #FFFFFF !important;
+}
+
+.kri-tour-popover .driver-popover-description strong {
+  color: #1E3A5F !important;
+  font-weight: 600 !important;
+}
+
+.kri-tour-popover .driver-popover-footer {
+  background: #F9FAFB !important;
+  border-top: 1px solid rgba(0,0,0,0.07) !important;
+  padding: 10px 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.kri-tour-popover .driver-popover-progress-text {
+  font-size: 10px !important;
+  color: #9CA3AF !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+}
+
+.kri-tour-popover .driver-popover-prev-btn,
+.kri-tour-popover .driver-popover-next-btn,
+.kri-tour-popover .driver-popover-done-btn {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 5px 14px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: opacity 0.15s !important;
+}
+
+.kri-tour-popover .driver-popover-prev-btn {
+  background: transparent !important;
+  color: #6B7280 !important;
+  border: 1px solid rgba(0,0,0,0.1) !important;
+}
+
+.kri-tour-popover .driver-popover-next-btn,
+.kri-tour-popover .driver-popover-done-btn {
+  background: #1E3A5F !important;
+  color: #FFFFFF !important;
+}
+
+.kri-tour-popover .driver-popover-close-btn {
+  color: #9CA3AF !important;
+  font-size: 18px !important;
+  top: 10px !important;
+  right: 12px !important;
+}
+
+.driver-overlay {
+  background: rgba(0,0,0,0.45) !important;
+}

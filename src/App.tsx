@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useCallback, useRef } from 'react';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import Navbar from './components/Navbar';
@@ -7,6 +7,7 @@ import UniverseBreakdown from './components/UniverseBreakdown';
 import FilterBar from './components/FilterBar';
 import MapContainer from './components/MapContainer';
 import AskAI from './components/AskAI';
+import OnboardingTour from './components/OnboardingTour';
 
 // Lazy-loaded panels
 const LeaderboardPanel = lazy(() => import('./components/LeaderboardPanel'));
@@ -30,6 +31,7 @@ function Dashboard() {
   const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, loading } = useSupabaseData();
   const { selectedRep, setSelectedRep } = useAppContext();
   const [leaderboardVisible, setLeaderboardVisible] = useState(true);
+  const tourTriggerRef = useRef<(() => void) | null>(null);
 
   const handleCloseRep = useCallback(() => {
     setSelectedRep(null);
@@ -46,21 +48,30 @@ function Dashboard() {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
     >
+      <OnboardingTour triggerRef={tourTriggerRef} />
+
       {/* Fixed header stack */}
-      <Navbar />
-      <StatsBar
-        userGroups={userGroups}
-        userGroupRegions={userGroupRegions}
-        ttmSummary={ttmSummary}
-        loading={loading}
-      />
-      <UniverseBreakdown customerCounts={customerCounts} />
-      <FilterBar userGroups={userGroups} />
+      <Navbar onTourClick={() => tourTriggerRef.current?.()} />
+      <div data-tour="statsbar">
+        <StatsBar
+          userGroups={userGroups}
+          userGroupRegions={userGroupRegions}
+          ttmSummary={ttmSummary}
+          loading={loading}
+        />
+      </div>
+      <div data-tour="universe">
+        <UniverseBreakdown customerCounts={customerCounts} />
+      </div>
+      <div data-tour="filterbar">
+        <FilterBar userGroups={userGroups} />
+      </div>
 
       {/* Map area — fills remaining height */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
         {/* Map fills full area */}
         <div
+          data-tour="map"
           style={{
             position: 'absolute',
             inset: 0,
@@ -72,6 +83,7 @@ function Dashboard() {
 
         {/* Leaderboard — right side */}
         <div
+          data-tour="leaderboard"
           style={{
             position: 'absolute',
             right: 0,
@@ -119,6 +131,7 @@ function Dashboard() {
 
         {/* Layers panel — bottom left */}
         <div
+          data-tour="layers"
           style={{
             position: 'absolute',
             bottom: 0,
