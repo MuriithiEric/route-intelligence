@@ -73,7 +73,9 @@ export default function LeaderboardPanel({
   );
 
   const lowestRegion = useMemo(() =>
-    [...userGroupRegions].sort((a, b) => a.coverage_pct - b.coverage_pct)[0],
+    [...userGroupRegions]
+      .filter(r => r.coverage_pct > 0)
+      .sort((a, b) => a.coverage_pct - b.coverage_pct)[0],
     [userGroupRegions]
   );
 
