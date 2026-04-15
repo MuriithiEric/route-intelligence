@@ -145,9 +145,12 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
       ]);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
+      const isOverloaded = errMsg.toLowerCase().includes('overload');
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `Error: ${errMsg}. Please check your API key in Settings.`,
+        content: isOverloaded
+          ? 'The AI is temporarily busy — please try again in a moment.'
+          : `Error: ${errMsg}`,
       }]);
     } finally {
       setLoading(false);
