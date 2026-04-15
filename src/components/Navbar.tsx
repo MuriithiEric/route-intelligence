@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import type { KRIUser } from '../hooks/useAuth';
 
 interface NavbarProps {
   onTourClick: () => void;
+  user?: KRIUser | null;
+  onSignOut?: () => void;
 }
 
-export default function Navbar({ onTourClick }: NavbarProps) {
+export default function Navbar({ onTourClick, user, onSignOut }: NavbarProps) {
   const [syncTime, setSyncTime] = useState(new Date());
 
   useEffect(() => {
@@ -123,6 +126,53 @@ export default function Navbar({ onTourClick }: NavbarProps) {
         <span style={{ fontSize: 11, color: '#9CA3AF' }}>
           Last sync {formatTime(syncTime)}
         </span>
+
+        {user && (
+          <>
+            <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.08)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  background: '#1E3A5F',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#C9963E' }}>
+                  {(user.email ?? '?')[0].toUpperCase()}
+                </span>
+              </div>
+              <span style={{ fontSize: 11, color: '#374151', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user.email}
+              </span>
+              <button
+                onClick={onSignOut}
+                title="Sign out"
+                style={{
+                  background: 'none',
+                  border: '1px solid rgba(0,0,0,0.1)',
+                  borderRadius: 5,
+                  padding: '3px 8px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: '#9CA3AF',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, system-ui, sans-serif',
+                  letterSpacing: '0.02em',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#DC2626'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#FCA5A5'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(0,0,0,0.1)'; }}
+              >
+                Sign out
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </nav>
   );

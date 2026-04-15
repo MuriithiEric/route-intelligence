@@ -2,8 +2,6 @@ import { useEffect, useRef } from 'react';
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
 
-const TOUR_KEY = 'kri_tour_completed';
-
 const STEPS = [
   {
     popover: {
@@ -97,9 +95,11 @@ const STEPS = [
 
 interface OnboardingTourProps {
   triggerRef: React.MutableRefObject<(() => void) | null>;
+  isTourCompleted: boolean;
+  onComplete: () => void;
 }
 
-export default function OnboardingTour({ triggerRef }: OnboardingTourProps) {
+export default function OnboardingTour({ triggerRef, isTourCompleted, onComplete }: OnboardingTourProps) {
   const driverRef = useRef<ReturnType<typeof driver> | null>(null);
 
   useEffect(() => {
@@ -112,21 +112,21 @@ export default function OnboardingTour({ triggerRef }: OnboardingTourProps) {
       steps: STEPS,
       popoverClass: 'kri-tour-popover',
       onDestroyStarted: () => {
-        localStorage.setItem(TOUR_KEY, '1');
+        onComplete(); // persists to Supabase user metadata
         driverRef.current?.destroy();
       },
     });
 
-    // Expose trigger to parent (for the Navbar button)
+    // Expose trigger to parent (Navbar Tour button)
     triggerRef.current = () => driverRef.current?.drive();
 
-    // Auto-launch on first visit
-    if (!localStorage.getItem(TOUR_KEY)) {
-      // Small delay so the map tiles have a moment to load
+    // Auto-launch only if the user hasn't completed the tour before
+    if (!isTourCompleted) {
       const t = setTimeout(() => driverRef.current?.drive(), 800);
       return () => clearTimeout(t);
     }
-  }, [triggerRef]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // run once on mount — isTourCompleted is stable at mount time
 
   return null;
 }
