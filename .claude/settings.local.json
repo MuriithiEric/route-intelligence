@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:\\\\Users\\\\USER\\\\Desktop\\\\bidcoai-solutions\\\\kenya-route-intelligence:*)",
+      "Bash(npm create:*)",
+      "Bash(npx create-vite@latest . --template react-ts)",
+      "Read(//c/Users/USER/Desktop/bidcoai-solutions/**)",
+      "Bash(npx create-vite@latest kri-temp --template react-ts)",
+      "Bash(cp:*)",
+      "Bash(rm -rf \"C:/Users/USER/Desktop/bidcoai-solutions/kri-temp\")",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(./node_modules/.bin/tailwindcss init:*)",
+      "Bash(npm run:*)",
+      "Bash(cat vite.config.ts)",
+      "Bash(cat vite.config.js)",
+      "Bash(netlify --version)",
+      "Bash(npm list:*)",
+      "Bash(npx netlify:*)",
+      "Bash(netlify status:*)"
+    ]
+  }
+}
