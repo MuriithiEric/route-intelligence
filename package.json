@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
+    "@netlify/functions": "^5.2.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/leaflet": "^1.9.21",
     "@types/node": "^24.12.2",

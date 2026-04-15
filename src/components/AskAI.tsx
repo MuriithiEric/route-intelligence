@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Settings, Sparkles } from 'lucide-react';
+import { X, Send, Sparkles } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { TTMSummary, UserGroup, CustomerCategoryCounts } from '../types';
 
@@ -82,8 +82,6 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('anthropic_api_key') || '');
-  const [showSettings, setShowSettings] = useState(false);
   const [followUpChips, setFollowUpChips] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -108,10 +106,6 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
 
   const send = async (text: string) => {
     if (!text.trim()) return;
-    if (!apiKey) {
-      setShowSettings(true);
-      return;
-    }
 
     const userMsg: Message = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
@@ -122,14 +116,9 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
     const history = [...messages, userMsg];
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: 'claude-sonnet-4-5',
           max_tokens: 2048,
@@ -245,68 +234,13 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
                   <div style={{ fontSize: 10, color: '#9CA3AF' }}>Powered by Claude</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  onClick={() => setShowSettings(!showSettings)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-                  title="API Settings"
-                >
-                  <Settings size={14} color="#9CA3AF" />
-                </button>
-                <button
-                  onClick={() => setOpen(false)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-                >
-                  <X size={16} color="#9CA3AF" />
-                </button>
-              </div>
+              <button
+                onClick={() => setOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={16} color="#9CA3AF" />
+              </button>
             </div>
-
-            {/* Settings panel */}
-            {showSettings && (
-              <div style={{ padding: '10px 16px', background: '#F9FAFB', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#1E3A5F', marginBottom: 6 }}>Anthropic API Key</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={e => setApiKey(e.target.value)}
-                    placeholder="sk-ant-..."
-                    style={{
-                      flex: 1,
-                      border: '1px solid rgba(0,0,0,0.12)',
-                      borderRadius: 6,
-                      padding: '6px 10px',
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                      outline: 'none',
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      localStorage.setItem('anthropic_api_key', apiKey);
-                      setShowSettings(false);
-                    }}
-                    style={{
-                      padding: '6px 12px',
-                      background: '#1E3A5F',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      borderRadius: 6,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      fontFamily: 'Inter, system-ui, sans-serif',
-                    }}
-                  >
-                    Save
-                  </button>
-                </div>
-                <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 4 }}>
-                  Your key is stored locally in your browser only.
-                </div>
-              </div>
-            )}
 
             {/* Messages */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
