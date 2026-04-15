@@ -84,10 +84,6 @@ export default function FilterBar({ userGroups }: FilterBarProps) {
       label: `${g.category} — ${g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`,
     })), [userGroups]);
 
-  // Dynamic date bounds
-  const today = new Date().toISOString().split('T')[0];
-  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
   return (
     <div
       style={{
@@ -112,50 +108,6 @@ export default function FilterBar({ userGroups }: FilterBarProps) {
         onChange={v => setFilters(prev => ({ ...prev, userGroup: v, fieldStaff: null, route: null }))}
         onClear={() => setFilters(prev => ({ ...prev, userGroup: null, fieldStaff: null, route: null }))}
       />
-
-      <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.08)', flexShrink: 0 }} />
-
-      {/* Date Range */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-        <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>From</span>
-        <input
-          type="date"
-          value={filters.dateFrom}
-          min={oneYearAgo}
-          max={filters.dateTo || today}
-          onChange={e => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
-          style={{
-            border: '1px solid rgba(0,0,0,0.1)',
-            borderRadius: 6,
-            padding: '3px 6px',
-            fontSize: 11,
-            color: '#1E3A5F',
-            fontFamily: 'Inter, system-ui, sans-serif',
-            height: 30,
-            outline: 'none',
-            background: '#F9FAFB',
-          }}
-        />
-        <span style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>To</span>
-        <input
-          type="date"
-          value={filters.dateTo}
-          min={filters.dateFrom || oneYearAgo}
-          max={today}
-          onChange={e => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
-          style={{
-            border: '1px solid rgba(0,0,0,0.1)',
-            borderRadius: 6,
-            padding: '3px 6px',
-            fontSize: 11,
-            color: '#1E3A5F',
-            fontFamily: 'Inter, system-ui, sans-serif',
-            height: 30,
-            outline: 'none',
-            background: '#F9FAFB',
-          }}
-        />
-      </div>
 
       {/* Clear */}
       {filters.userGroup && (

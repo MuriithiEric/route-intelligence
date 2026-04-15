@@ -79,11 +79,10 @@ export default function UniverseBreakdown({ customerCounts }: UniverseBreakdownP
                 style={{
                   width: 8,
                   height: 8,
-                  borderRadius: tier.key === 'DISTRIBUTOR' ? 2 : '50%',
+                  borderRadius: '50%',
                   background: color,
                   display: 'inline-block',
                   flexShrink: 0,
-                  transform: tier.key === 'DISTRIBUTOR' ? 'rotate(45deg)' : undefined,
                 }}
               />
               <span style={{ fontSize: 11, fontWeight: 600, color: isActive ? color : '#1E3A5F' }}>
