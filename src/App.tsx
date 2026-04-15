@@ -166,7 +166,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
       </div>
 
       {/* Ask AI — fixed, z-9999 */}
-      <AskAI />
+      <AskAI ttmSummary={ttmSummary} userGroups={userGroups} customerCounts={customerCounts} />
     </div>
   );
 }

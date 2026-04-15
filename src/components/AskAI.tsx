@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Settings, Sparkles } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import type { TTMSummary, UserGroup, CustomerCategoryCounts } from '../types';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -9,21 +10,73 @@ interface Message {
 
 const DEFAULT_CHIPS = [
   'Which rep has lowest coverage?',
-  'Show Coast opportunity',
-  'Most productive rep this month?',
-  'Distributors never visited?',
+  'Who is the top performer?',
+  'Which region needs attention?',
+  'Show reps with under 50 shops visited',
 ];
 
-function buildContext(filters: ReturnType<typeof useAppContext>['filters'], selectedRep: string | null) {
-  const parts: string[] = ['You are a Kenya field operations analyst for BIDCO.'];
-  if (selectedRep) parts.push(`Currently viewing rep: ${selectedRep}.`);
-  if (filters.userGroup) parts.push(`User group filter: ${filters.userGroup}.`);
-  if (filters.region) parts.push(`Region filter: ${filters.region}.`);
-  parts.push('Answer questions about route intelligence, rep performance, and coverage gaps. Be concise and data-focused.');
-  return parts.join(' ');
+interface AskAIProps {
+  ttmSummary?: TTMSummary[];
+  userGroups?: UserGroup[];
+  customerCounts?: CustomerCategoryCounts | null;
 }
 
-export default function AskAI() {
+function buildContext(
+  filters: ReturnType<typeof useAppContext>['filters'],
+  selectedRep: string | null,
+  ttmSummary: TTMSummary[],
+  userGroups: UserGroup[],
+  customerCounts: CustomerCategoryCounts | null,
+) {
+  const lines: string[] = [];
+
+  lines.push('You are a Kenya field operations analyst for BIDCO Route Intelligence. Answer questions using the real data below. Be concise and data-focused. When listing reps or rankings, use the actual numbers provided.');
+  lines.push('');
+
+  // Customer universe
+  lines.push('## Customer Universe');
+  if (customerCounts) {
+    lines.push(`Total customers: ${customerCounts.total.toLocaleString()}`);
+    lines.push(`Distributors: ${customerCounts.DISTRIBUTOR} | Key Accounts: ${customerCounts['KEY ACCOUNT']} | Hubs: ${customerCounts.HUB} | Stockists: ${customerCounts.STOCKIST} | Modern Trade: ${customerCounts['MODERN TRADE']} | General Trade: ${customerCounts['GENERAL TRADE']}`);
+  }
+  lines.push('');
+
+  // User groups
+  if (userGroups.length > 0) {
+    lines.push('## User Groups');
+    userGroups.forEach(g => {
+      lines.push(`${g.category}: ${g.active_users} reps, ${g.total_visits.toLocaleString()} visits, ${g.unique_shops.toLocaleString()} shops, ${g.coverage_pct.toFixed(1)}% coverage`);
+    });
+    lines.push('');
+  }
+
+  // All rep performance
+  if (ttmSummary.length > 0) {
+    lines.push('## All Rep Performance (TTM)');
+    const sorted = [...ttmSummary].sort((a, b) => b.total_visits - a.total_visits);
+    sorted.forEach((r, i) => {
+      lines.push(`${i + 1}. ${r.name} (${r.role}, ${r.primary_region}): ${r.total_visits} visits, ${r.unique_shops} shops, ${r.unique_routes} routes, ${r.coverage_pct.toFixed(1)}% coverage, ${r.visits_per_day.toFixed(1)} v/day, ${r.field_days} field days, avg ${r.avg_duration.toFixed(0)} min/visit, last active ${r.last_active}`);
+    });
+    lines.push('');
+  }
+
+  // Current view context
+  lines.push('## Current Dashboard State');
+  if (selectedRep) {
+    const rep = ttmSummary.find(r => r.name === selectedRep);
+    if (rep) {
+      lines.push(`Selected rep: ${rep.name} (${rep.role}, ${rep.primary_region}) — ${rep.total_visits} visits, ${rep.unique_shops} shops, ${rep.coverage_pct.toFixed(1)}% coverage`);
+    }
+  } else if (filters.userGroup) {
+    lines.push(`Filtered to user group: ${filters.userGroup}`);
+  } else {
+    lines.push('Viewing all field staff across Kenya.');
+  }
+
+  return lines.join('\n');
+}
+
+export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts = null }: AskAIProps) {
   const { filters, selectedRep } = useAppContext();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -45,7 +98,7 @@ export default function AskAI() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const contextMessage = buildContext(filters, selectedRep);
+  const contextMessage = buildContext(filters, selectedRep, ttmSummary, userGroups, customerCounts);
 
   const openingMessage = selectedRep
     ? `Viewing ${selectedRep}'s activity. Ask me about their route performance, shops visited, or coverage gaps.`
@@ -78,8 +131,8 @@ export default function AskAI() {
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
+          model: 'claude-sonnet-4-5',
+          max_tokens: 2048,
           system: contextMessage,
           messages: history.map(m => ({ role: m.role, content: m.content })),
         }),
