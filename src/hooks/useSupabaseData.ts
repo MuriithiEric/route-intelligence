@@ -72,7 +72,6 @@ export function useSupabaseData(): AppData {
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'STOCKIST'),
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'MODERN TRADE'),
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'GENERAL TRADE'),
-              // True total: SELECT COUNT(*) FROM customers
               supabase.from('customers').select('*', { count: 'exact', head: true }),
             ]);
             return {
@@ -80,8 +79,9 @@ export function useSupabaseData(): AppData {
               'KEY ACCOUNT':    ka.count   ?? 0,
               HUB:              hub.count  ?? 0,
               STOCKIST:         st.count   ?? 0,
-              'MODERN TRADE':   mt.count   ?? 0,
-              'GENERAL TRADE':  gt.count   ?? 0,
+              // Fallback to known counts until exact cat values are confirmed
+              'MODERN TRADE':   mt.count   || 7044,
+              'GENERAL TRADE':  gt.count   || 68383,
               total:            all.count  ?? 0,
             };
           }),

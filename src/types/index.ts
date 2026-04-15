@@ -142,12 +142,12 @@ export const GROUP_COLOURS: Record<string, string> = {
 };
 
 export const TIER_COLOURS: Record<string, string> = {
-  'DISTRIBUTOR': '#C0392B',
-  'KEY ACCOUNT': '#7E57C2',
-  'HUB': '#C9963E',
-  'STOCKIST': '#E07B39',
+  'DISTRIBUTOR':  '#C0392B',
+  'KEY ACCOUNT':  '#7E57C2',
+  'HUB':          '#C9963E',
+  'STOCKIST':     '#E07B39',
   'MODERN TRADE': '#0E8C7A',
-  'GENERAL TRADE': '#9E9E9E',
+  'GENERAL TRADE':'#9E9E9E',
 };
 
 export const REGIONS: Region[] = ['NAIROBI', 'NORTH RIFT', 'SOUTH RIFT', 'CENTRAL', 'LAKE', 'COAST'];

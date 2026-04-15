@@ -88,13 +88,13 @@ export default function LayersPanel() {
   );
 
   const tierOptions: Array<{ key: Tier | null; label: string; color: string }> = [
-    { key: null, label: 'All tiers', color: '#6B7280' },
-    { key: 'DISTRIBUTOR', label: 'Distributor', color: '#C0392B' },
-    { key: 'KEY ACCOUNT', label: 'Key Account', color: '#7E57C2' },
-    { key: 'HUB', label: 'Hub', color: '#C9963E' },
-    { key: 'STOCKIST', label: 'Stockist', color: '#E07B39' },
-    { key: 'MODERN TRADE', label: 'Modern Trade', color: '#0E8C7A' },
-    { key: 'GENERAL TRADE', label: 'General Trade', color: '#9E9E9E' },
+    { key: null,            label: 'All tiers',    color: '#6B7280' },
+    { key: 'DISTRIBUTOR',   label: 'Distributor',  color: '#C0392B' },
+    { key: 'KEY ACCOUNT',   label: 'Key Account',  color: '#7E57C2' },
+    { key: 'HUB',           label: 'Hub',          color: '#C9963E' },
+    { key: 'STOCKIST',      label: 'Stockist',     color: '#E07B39' },
+    { key: 'MODERN TRADE',  label: 'Modern Trade', color: '#0E8C7A' },
+    { key: 'GENERAL TRADE', label: 'General Trade',color: '#9E9E9E' },
   ];
 
   return (
