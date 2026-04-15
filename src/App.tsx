@@ -75,6 +75,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
           userGroups={userGroups}
           userGroupRegions={userGroupRegions}
           ttmSummary={ttmSummary}
+          customerCounts={customerCounts}
           loading={loading}
         />
       </div>

@@ -1,13 +1,14 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
 import { Users, Store, Clock, Target } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import type { UserGroup, UserGroupRegion, RepProfile, TTMSummary } from '../types';
+import type { UserGroup, UserGroupRegion, RepProfile, TTMSummary, CustomerCategoryCounts } from '../types';
 
 interface StatsBarProps {
   userGroups: UserGroup[];
   userGroupRegions: UserGroupRegion[];
   repProfiles?: RepProfile[];
   ttmSummary: TTMSummary[];
+  customerCounts: CustomerCategoryCounts | null;
   loading: boolean;
 }
 
@@ -49,14 +50,14 @@ function AnimatedNumber({ value }: { value: number }) {
   return <>{displayed.toLocaleString()}</>;
 }
 
-export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, loading }: StatsBarProps) {
+export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, customerCounts, loading }: StatsBarProps) {
   const { filters, selectedRep } = useAppContext();
 
   const stats = useMemo(() => {
     if (selectedRep) {
       const rep = ttmSummary.find(r => r.name === selectedRep);
       return {
-        customerUniverse: 85592,
+        customerUniverse: customerCounts?.total ?? 0,
         shopsVisited: rep?.unique_shops || 0,
         activeStaff: 1,
         avgVisit: rep?.avg_duration || 0,
@@ -69,7 +70,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, loa
         r => r.category === filters.userGroup && r.region === filters.region
       );
       return {
-        customerUniverse: 85592,
+        customerUniverse: customerCounts?.total ?? 0,
         shopsVisited: regionData?.unique_shops || 0,
         activeStaff: regionData?.unique_reps || 0,
         avgVisit: 11.2,
@@ -80,7 +81,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, loa
     if (filters.userGroup) {
       const group = userGroups.find(g => g.category === filters.userGroup);
       return {
-        customerUniverse: 85592,
+        customerUniverse: customerCounts?.total ?? 0,
         shopsVisited: group?.unique_shops || 0,
         activeStaff: group?.active_users || 0,
         avgVisit: 11.2,
@@ -96,7 +97,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, loa
       : 30.7;
 
     return {
-      customerUniverse: 85592,
+      customerUniverse: customerCounts?.total ?? 0,
       shopsVisited: totalShops || 26294,
       activeStaff: totalStaff || 95,
       avgVisit: 11.2,
