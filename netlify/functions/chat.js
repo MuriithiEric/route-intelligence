@@ -1,6 +1,4 @@
-import type { Handler } from '@netlify/functions';
-
-export const handler: Handler = async (event) => {
+exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
@@ -9,6 +7,7 @@ export const handler: Handler = async (event) => {
   if (!apiKey) {
     return {
       statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: { message: 'API key not configured on server.' } }),
     };
   }
@@ -36,7 +35,8 @@ export const handler: Handler = async (event) => {
   } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: { message: 'Internal server error.' } }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: { message: String(err) } }),
     };
   }
 };
