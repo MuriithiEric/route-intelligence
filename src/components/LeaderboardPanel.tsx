@@ -154,24 +154,12 @@ export default function LeaderboardPanel({
         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
           CCO SUMMARY
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          {/* Top performer */}
-          <div style={{ background: '#FFF8E7', borderRadius: 8, padding: '7px 8px', border: '1px solid #FDE68A' }}>
-            <div style={{ fontSize: 9, color: '#92400E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Performer</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#1E3A5F', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {topPerformer?.name || '—'}
-            </div>
-            <div style={{ fontSize: 10, color: '#6B7280' }}>{topPerformer?.total_visits?.toLocaleString()} visits</div>
+        <div style={{ background: '#FFF8E7', borderRadius: 8, padding: '7px 8px', border: '1px solid #FDE68A' }}>
+          <div style={{ fontSize: 9, color: '#92400E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Performer</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#1E3A5F', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {topPerformer?.name || '—'}
           </div>
-
-          {/* Lowest coverage region */}
-          <div style={{ background: '#FFF1F0', borderRadius: 8, padding: '7px 8px', border: '1px solid #FCA5A5' }}>
-            <div style={{ fontSize: 9, color: '#991B1B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Low Coverage</div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#1E3A5F', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {lowestRegion?.region || '—'}
-            </div>
-            <div style={{ fontSize: 10, color: '#C0392B', fontWeight: 600 }}>{lowestRegion?.coverage_pct?.toFixed(1)}% coverage</div>
-          </div>
+          <div style={{ fontSize: 10, color: '#6B7280' }}>{topPerformer?.total_visits?.toLocaleString()} visits</div>
         </div>
       </div>
 
