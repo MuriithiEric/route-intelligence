@@ -194,7 +194,7 @@ export default function LeaderboardPanel({
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {filteredReps.map((rep, i) => {
           const isTop = i === 0;
-          const isSelected = selectedRep === rep.name;
+          const isSelected = selectedRep === rep.raw_name;
           const color = GROUP_COLOURS[rep.role] || '#6B7280';
           const max = maxValue(filteredReps[0]);
           const pct = max > 0 ? (repValue(rep) / max) * 100 : 0;
@@ -202,7 +202,7 @@ export default function LeaderboardPanel({
           return (
             <div
               key={rep.id}
-              onClick={() => setSelectedRep(isSelected ? null : rep.name)}
+              onClick={() => setSelectedRep(isSelected ? null : rep.raw_name)}
               style={{
                 padding: '7px 10px',
                 borderBottom: '1px solid rgba(0,0,0,0.04)',

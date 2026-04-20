@@ -147,7 +147,7 @@ export const TIER_COLOURS: Record<string, string> = {
   'HUB':          '#C9963E',
   'STOCKIST':     '#E07B39',
   'MODERN TRADE': '#0E8C7A',
-  'GENERAL TRADE':'#9E9E9E',
+  'GENERAL TRADE':'#F97316',
 };
 
 export const REGIONS: Region[] = ['NAIROBI', 'NORTH RIFT', 'SOUTH RIFT', 'CENTRAL', 'LAKE', 'COAST'];
@@ -178,6 +178,7 @@ export interface AppData {
   routeSummary: RouteSummary[];
   userGroupRegions: UserGroupRegion[];
   customerCounts: CustomerCategoryCounts | null;
+  routeCount: number | null;
   loading: boolean;
 }
 
@@ -186,9 +187,6 @@ export interface LayerState {
   customerUniverse: boolean;
   customerTier: Tier | null;
   routes: boolean;
-  routeType: 'primary' | 'secondary' | 'both';
-  heatmap: boolean;
-  countyBoundaries: boolean;
 }
 
 export interface ShopVisitRow {

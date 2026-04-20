@@ -5,13 +5,12 @@ import {
   CircleMarker,
   Polyline,
   Tooltip,
+  Popup,
   useMapEvents,
-  GeoJSON,
   useMap,
 } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L, { type LatLngExpression, type LatLngTuple } from 'leaflet';
-import type { GeoJsonObject } from 'geojson';
 import 'leaflet/dist/leaflet.css';
 import 'react-leaflet-cluster/dist/assets/MarkerCluster.css';
 import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
@@ -47,43 +46,6 @@ function useDebounce(fn: () => void, delay: number) {
 }
 
 // County boundaries layer
-function CountyBoundaries() {
-  const [geoData, setGeoData] = useState<GeoJsonObject | null>(null);
-
-  useEffect(() => {
-    const URLS = [
-      'https://raw.githubusercontent.com/mikeatlas/kenya/master/kenya.geojson',
-      'https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/KEN/ADM1/geoBoundaries-KEN-ADM1.geojson',
-    ];
-
-    const tryFetch = async (index: number): Promise<void> => {
-      if (index >= URLS.length) return;
-      try {
-        const res = await fetch(URLS[index]);
-        if (!res.ok) throw new Error(`${res.status}`);
-        const data = await res.json();
-        setGeoData(data);
-      } catch {
-        tryFetch(index + 1);
-      }
-    };
-
-    tryFetch(0);
-  }, []);
-
-  if (!geoData) return null;
-  return (
-    <GeoJSON
-      data={geoData}
-      style={() => ({
-        weight: 1.5,
-        color: 'rgba(30,58,95,0.5)',
-        fillColor: 'rgba(30,58,95,0.05)',
-        fillOpacity: 1,
-      })}
-    />
-  );
-}
 
 // Customer universe layer — loads on demand with bounding box
 function CustomerUniverseLayer({ activeTier }: { activeTier: string | null }) {
@@ -140,6 +102,9 @@ function CustomerUniverseLayer({ activeTier }: { activeTier: string | null }) {
 
         const pos: LatLngTuple = [c.lat, c.lng];
 
+        const formatDate = (d: string) =>
+          d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
         return (
           <CircleMarker
             key={c.id}
@@ -152,13 +117,77 @@ function CustomerUniverseLayer({ activeTier }: { activeTier: string | null }) {
               weight: 1,
             }}
           >
-            <Tooltip>
-              <div style={{ fontFamily: 'Inter, system-ui, sans-serif', minWidth: 160 }}>
-                <strong style={{ color: '#1E3A5F' }}>{c.name}</strong>
-                <br />
-                <span style={{ color: '#6B7280', fontSize: 11 }}>{c.cat} · {c.region}</span>
-              </div>
+            <Tooltip direction="top" offset={[0, -radius]}>
+              <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }}>
+                {c.name} · {c.region}
+              </span>
             </Tooltip>
+            <Popup minWidth={200} maxWidth={260}>
+              <div style={{ fontFamily: 'Inter, system-ui, sans-serif', padding: '2px 0' }}>
+                <div style={{ fontWeight: 700, color: '#1E3A5F', fontSize: 13, marginBottom: 4 }}>
+                  {c.name}
+                </div>
+                <div style={{ marginBottom: 6 }}>
+                  <span style={{
+                    display: 'inline-block',
+                    background: color,
+                    color: '#fff',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: 10,
+                  }}>
+                    {c.cat}
+                  </span>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <tbody>
+                    {c.region && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Region</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.region}</td>
+                      </tr>
+                    )}
+                    {c.territory && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Territory</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.territory}</td>
+                      </tr>
+                    )}
+                    {c.channel && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Channel</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.channel}</td>
+                      </tr>
+                    )}
+                    {c.loc && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Location</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.loc}</td>
+                      </tr>
+                    )}
+                    {c.last_visit && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Last visit</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_visit)}</td>
+                      </tr>
+                    )}
+                    {c.last_sale && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Last sale</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_sale)}</td>
+                      </tr>
+                    )}
+                    {c.phone && (
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 8 }}>Phone</td>
+                        <td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.phone}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Popup>
           </CircleMarker>
         );
       })}
@@ -264,12 +293,10 @@ function RepVisitedShopsLayer({
 // Route layer
 function RoutesLayer({
   repName,
-  routeType,
   visits,
   repColor,
 }: {
   repName: string | null;
-  routeType: 'primary' | 'secondary' | 'both';
   visits: Visit[];
   repColor: string;
 }) {
@@ -294,19 +321,14 @@ function RoutesLayer({
 
         if (points.length < 2) return null;
 
-        const isPrimary = routeVisits[0]?.route_type === 'primary';
-        if (routeType === 'primary' && !isPrimary) return null;
-        if (routeType === 'secondary' && isPrimary) return null;
-
         return (
           <Polyline
             key={routeId}
             positions={points}
             pathOptions={{
               color: repColor,
-              weight: isPrimary ? 3 : 2,
+              weight: 2.5,
               opacity: 0.55,
-              dashArray: isPrimary ? undefined : '7, 5',
             }}
           >
             <Tooltip sticky>
@@ -346,7 +368,7 @@ function FieldStaffLayer({
 
         const pos: LatLngTuple = [centroid[0] + jitterLat, centroid[1] + jitterLng];
         const color = GROUP_COLOURS[rep.role] || '#6B7280';
-        const isSelected = selectedRep === rep.name;
+        const isSelected = selectedRep === rep.raw_name;
 
         return (
           <CircleMarker
@@ -420,7 +442,7 @@ function MapFlyController({ ttmSummary }: { ttmSummary: TTMSummary[] }) {
   useEffect(() => {
     if (!selectedRep || selectedRep === prevRep.current) return;
     prevRep.current = selectedRep;
-    const rep = ttmSummary.find(r => r.name === selectedRep);
+    const rep = ttmSummary.find(r => r.raw_name === selectedRep);
     if (!rep) return;
     const center = resolveRegionCentroid(rep.primary_region);
     map.flyTo(center, 10, { duration: 1.2, easeLinearity: 0.4 });
@@ -457,13 +479,13 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   // Derive rep's group colour for visited-shops + route layers
   const repColor = useMemo(() => {
     if (!selectedRep) return '#C9963E';
-    const rep = ttmSummary.find(r => r.name === selectedRep);
+    const rep = ttmSummary.find(r => r.raw_name === selectedRep);
     return GROUP_COLOURS[rep?.role || ''] || '#C9963E';
   }, [selectedRep, ttmSummary]);
 
   // Badge stats: use pre-aggregated ttm_summary totals (same source as leaderboard + rep panel)
   const repStats = useMemo(
-    () => ttmSummary.find(r => r.name === selectedRep) ?? null,
+    () => ttmSummary.find(r => r.raw_name === selectedRep) ?? null,
     [ttmSummary, selectedRep]
   );
 
@@ -480,7 +502,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   }, [selectedRep, fetchRepVisits]);
 
   const handleRepClick = useCallback((rep: TTMSummary) => {
-    setSelectedRep(selectedRep === rep.name ? null : rep.name);
+    setSelectedRep(selectedRep === rep.raw_name ? null : rep.raw_name);
   }, [selectedRep, setSelectedRep]);
 
   const CENTER: LatLngExpression = [0.0236, 37.9062];
@@ -510,10 +532,10 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
           pointerEvents: 'all',
         }}>
           {visitsLoading ? (
-            <span style={{ opacity: 0.85 }}>Loading {selectedRep}…</span>
+            <span style={{ opacity: 0.85 }}>Loading {repStats?.name ?? selectedRep}…</span>
           ) : (
             <>
-              <span>{selectedRep}</span>
+              <span>{repStats?.name ?? selectedRep}</span>
               {repStats?.role && (
                 <>
                   <span style={{ opacity: 0.4 }}>·</span>
@@ -569,7 +591,6 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         <MapEventListener onZoomChange={setZoom} />
         <MapFlyController ttmSummary={ttmSummary} />
 
-        {layers.countyBoundaries && <CountyBoundaries />}
 
         {layers.fieldStaff && (
           <FieldStaffLayer
@@ -587,7 +608,6 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         {selectedRep && (
           <RoutesLayer
             repName={selectedRep}
-            routeType={layers.routeType}
             visits={repVisits}
             repColor={repColor}
           />

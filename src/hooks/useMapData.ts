@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { cachedQuery } from './useSupabaseData';
-import type { Visit, Customer, RepProfile, DailyActivity, VisitFrequency, ShopVisitRow } from '../types';
+import type { Visit, Customer, RepProfile, DailyActivity, VisitFrequency, ShopVisitRow, RouteSummary } from '../types';
 
 interface BoundingBox {
   minLat: number; maxLat: number;
@@ -29,7 +29,9 @@ export function useMapData() {
         query = query.eq('cat', tier);
       }
 
-      const { data, error } = await query.limit(2000);
+      // Tier-filtered queries are scoped to viewport + one category, so the result set is small enough to fetch fully.
+      // The all-tiers path keeps a 5000 cap to avoid DOM overload when no filter is active.
+      const { data, error } = await (tier ? query : query.limit(5000));
       if (error) throw error;
       return data || [];
     });
@@ -103,8 +105,7 @@ export function useMapData() {
           visit_frequency!left(visit_count, first_visit, last_visit)
         `)
         .eq('rep_name', repName)
-        .order('check_in', { ascending: false })
-        .limit(500);
+        .order('check_in', { ascending: false });
 
       if (error) {
         // Fallback: fetch visits without join
@@ -112,8 +113,7 @@ export function useMapData() {
           .from('visits')
           .select('shop_id,shop_name,region,check_in,duration')
           .eq('rep_name', repName)
-          .order('check_in', { ascending: false })
-          .limit(500);
+          .order('check_in', { ascending: false });
         if (vErr) throw vErr;
         return (visitsData || []).map((v: Record<string, unknown>) => ({
           shop_id: v.shop_id as string,
@@ -148,27 +148,24 @@ export function useMapData() {
     });
   }, []);
 
-  const fetchHeatmapData = useCallback(async (category?: string): Promise<Array<[number, number, number]>> => {
-    const key = `heatmap:${category || 'all'}`;
-    return cachedQuery<Array<[number, number, number]>>(key, async () => {
-      let query = supabase
-        .from('visits')
-        .select('lat,lng')
-        .not('lat', 'is', null)
-        .not('lng', 'is', null)
-        .limit(2000);
-      if (category) query = query.eq('category', category);
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data || []).map((v: { lat: number; lng: number }) => [v.lat, v.lng, 1] as [number, number, number]);
-    });
-  }, []);
 
   const fetchVisitFrequency = useCallback(async (repName: string): Promise<VisitFrequency[]> => {
     const key = `visit_frequency:${repName}`;
     return cachedQuery<VisitFrequency[]>(key, async () => {
       const { data, error } = await supabase
         .from('visit_frequency')
+        .select('*')
+        .eq('rep_name', repName);
+      if (error) throw error;
+      return data || [];
+    });
+  }, []);
+
+  const fetchRepRoutes = useCallback(async (repName: string): Promise<RouteSummary[]> => {
+    const key = `route_summary:rep:${repName}`;
+    return cachedQuery<RouteSummary[]>(key, async () => {
+      const { data, error } = await supabase
+        .from('route_summary')
         .select('*')
         .eq('rep_name', repName);
       if (error) throw error;
@@ -183,7 +180,7 @@ export function useMapData() {
     fetchRepProfile,
     fetchRepDailyActivity,
     fetchRepShopVisits,
-    fetchHeatmapData,
     fetchVisitFrequency,
+    fetchRepRoutes,
   };
 }

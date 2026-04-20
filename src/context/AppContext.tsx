@@ -28,9 +28,6 @@ const defaultLayers: LayerState = {
   customerUniverse: false,
   customerTier: null,
   routes: true,
-  routeType: 'both',
-  heatmap: false,
-  countyBoundaries: false,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);

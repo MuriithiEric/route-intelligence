@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import type { UserGroup } from '../types';
+import type { UserGroup, TTMSummary } from '../types';
 
 interface FilterBarProps {
   userGroups: UserGroup[];
+  ttmSummary: TTMSummary[];
 }
 
 function Select({
@@ -75,14 +76,22 @@ function Select({
   );
 }
 
-export default function FilterBar({ userGroups }: FilterBarProps) {
+export default function FilterBar({ userGroups, ttmSummary }: FilterBarProps) {
   const { filters, setFilters } = useAppContext();
+
+  const repCountByGroup = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const rep of ttmSummary) {
+      counts[rep.role] = (counts[rep.role] || 0) + 1;
+    }
+    return counts;
+  }, [ttmSummary]);
 
   const groupOptions = useMemo(() =>
     userGroups.map(g => ({
       value: g.category,
-      label: `${g.category} — ${g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`,
-    })), [userGroups]);
+      label: `${g.category} — ${repCountByGroup[g.category] ?? g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`,
+    })), [userGroups, repCountByGroup]);
 
   return (
     <div

@@ -38,7 +38,7 @@ interface DashboardProps {
 }
 
 function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: DashboardProps) {
-  const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, loading } = useSupabaseData();
+  const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, routeCount, loading } = useSupabaseData();
   const { selectedRep, setSelectedRep } = useAppContext();
   const [leaderboardVisible, setLeaderboardVisible] = useState(true);
   const tourTriggerRef = useRef<(() => void) | null>(null);
@@ -83,7 +83,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
         <UniverseBreakdown customerCounts={customerCounts} />
       </div>
       <div data-tour="filterbar">
-        <FilterBar userGroups={userGroups} />
+        <FilterBar userGroups={userGroups} ttmSummary={ttmSummary} />
       </div>
 
       {/* Map area — fills remaining height */}
@@ -140,8 +140,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
             <Suspense fallback={<PanelSkeleton width={380} />}>
               <RepActivityPanel
                 repName={selectedRep}
-                repData={ttmSummary.find(r => r.name === selectedRep) ?? null}
-                routeSummary={routeSummary}
+                repData={ttmSummary.find(r => r.raw_name === selectedRep) ?? null}
                 onClose={handleCloseRep}
               />
             </Suspense>
@@ -160,7 +159,11 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
           }}
         >
           <Suspense fallback={null}>
-            <LayersPanel />
+            <LayersPanel
+              fieldStaffCount={ttmSummary.length || undefined}
+              customerCount={customerCounts?.total || undefined}
+              routeCount={routeCount ?? undefined}
+            />
           </Suspense>
         </div>
       </div>

@@ -55,7 +55,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
 
   const stats = useMemo(() => {
     if (selectedRep) {
-      const rep = ttmSummary.find(r => r.name === selectedRep);
+      const rep = ttmSummary.find(r => r.raw_name === selectedRep);
       return {
         customerUniverse: customerCounts?.total ?? 0,
         shopsVisited: rep?.unique_shops || 0,
@@ -80,10 +80,11 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
 
     if (filters.userGroup) {
       const group = userGroups.find(g => g.category === filters.userGroup);
+      const groupStaff = ttmSummary.filter(r => r.role === filters.userGroup).length;
       return {
         customerUniverse: customerCounts?.total ?? 0,
         shopsVisited: group?.unique_shops || 0,
-        activeStaff: group?.active_users || 0,
+        activeStaff: groupStaff,
         avgVisit: 11.2,
         nationalCoverage: group?.coverage_pct || 0,
       };
@@ -91,7 +92,6 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
 
     // Defaults
     const totalShops = userGroups.reduce((sum, g) => sum + g.unique_shops, 0);
-    const totalStaff = userGroups.reduce((sum, g) => sum + g.active_users, 0);
     const avgCoverage = userGroups.length > 0
       ? userGroups.reduce((sum, g) => sum + g.coverage_pct, 0) / userGroups.length
       : 30.7;
@@ -99,7 +99,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
     return {
       customerUniverse: customerCounts?.total ?? 0,
       shopsVisited: totalShops || 26294,
-      activeStaff: totalStaff || 95,
+      activeStaff: ttmSummary.length,
       avgVisit: 11.2,
       nationalCoverage: avgCoverage || 30.7,
     };

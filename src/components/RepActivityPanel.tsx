@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Download, MapPin, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useMapData } from '../hooks/useMapData';
-import type { TTMSummary, DailyActivity, ShopVisitRow, RouteSummary } from '../types';
+import type { TTMSummary, DailyActivity, ShopVisitRow, RouteSummary, RepProfile } from '../types';
 import { TIER_COLOURS, GROUP_COLOURS } from '../types';
 
 interface RepActivityPanelProps {
   repName: string;
   repData: TTMSummary | null;
-  routeSummary: RouteSummary[];
   onClose: () => void;
 }
 
@@ -32,39 +31,44 @@ function TierDot({ tier }: { tier: string | null }) {
   );
 }
 
-export default function RepActivityPanel({ repName, repData, routeSummary, onClose }: RepActivityPanelProps) {
+const PAGE_SIZE = 100;
+
+export default function RepActivityPanel({ repName, repData, onClose }: RepActivityPanelProps) {
   const { setFilters } = useAppContext();
-  const { fetchRepDailyActivity, fetchRepShopVisits } = useMapData();
+  const { fetchRepDailyActivity, fetchRepShopVisits, fetchRepRoutes, fetchRepProfile } = useMapData();
 
   const [dailyActivity, setDailyActivity] = useState<DailyActivity[]>([]);
   const [shopVisits, setShopVisits] = useState<ShopVisitRow[]>([]);
+  const [repRoutes, setRepRoutes] = useState<RouteSummary[]>([]);
+  const [repProfile, setRepProfile] = useState<RepProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('shops');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
+  const [shopsDisplayLimit, setShopsDisplayLimit] = useState(PAGE_SIZE);
 
   // repData comes from ttm_summary — same source as leaderboard and map markers
   const groupColor = GROUP_COLOURS[repData?.role || ''] || '#6B7280';
 
   useEffect(() => {
     setLoading(true);
+    setShopsDisplayLimit(PAGE_SIZE);
     Promise.all([
       fetchRepDailyActivity(repName),
       fetchRepShopVisits(repName),
-    ]).then(([daily, shops]) => {
+      fetchRepRoutes(repName),
+      fetchRepProfile(repName),
+    ]).then(([daily, shops, routes, profile]) => {
       setDailyActivity(daily);
       setShopVisits(shops);
+      setRepRoutes(routes);
+      setRepProfile(profile);
       setLoading(false);
     }).catch(err => {
       console.error('RepActivityPanel load error:', err);
       setLoading(false);
     });
-  }, [repName, fetchRepDailyActivity, fetchRepShopVisits]);
-
-  const repRoutes = useMemo(() =>
-    routeSummary.filter(r => r.rep_name === repName),
-    [routeSummary, repName]
-  );
+  }, [repName, fetchRepDailyActivity, fetchRepShopVisits, fetchRepRoutes, fetchRepProfile]);
 
   const filteredShops = useMemo(() => {
     if (dateFilter === 'all') return shopVisits;
@@ -78,6 +82,15 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
     return shopVisits.filter(s => new Date(s.check_in) >= cutoff);
   }, [shopVisits, dateFilter]);
 
+  // Reset pagination when filter changes
+  useEffect(() => { setShopsDisplayLimit(PAGE_SIZE); }, [dateFilter]);
+
+  // Unique shop count: use rep_profiles value for all-time; deduplicate visit rows for date-filtered views
+  const uniqueShopCount = useMemo(() => {
+    if (dateFilter === 'all') return repProfile?.unique_shops ?? repData?.unique_shops ?? null;
+    return new Set(filteredShops.map(s => s.shop_id)).size;
+  }, [dateFilter, repProfile, repData, filteredShops]);
+
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '—';
     return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -88,7 +101,19 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
     return new Date(dateStr).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
-  const downloadCSV = () => {
+  const triggerDownload = (csv: string, filename: string) => {
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fileBase = repName.replace(/\s+/g, '_');
+
+  const downloadShopsCSV = () => {
     const headers = ['Shop Name', 'Tier', 'Category', 'Region', 'Visit Date', 'Time', 'Duration (min)', 'Visit Count'];
     const rows = filteredShops.map(s => [
       `"${s.shop_name}"`,
@@ -100,15 +125,35 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
       s.duration || '',
       s.visit_count,
     ]);
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${repName.replace(/\s+/g, '_')}_visits.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_shops.csv`);
   };
+
+  const downloadDaysCSV = () => {
+    const headers = ['Date', 'Day Start', 'Day End', 'Visits That Day', 'Shops That Day'];
+    const rows = dailyActivity.map(d => [
+      d.date,
+      d.day_start || '',
+      d.day_end || '',
+      d.visits_that_day,
+      d.shops_that_day,
+    ]);
+    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_days.csv`);
+  };
+
+  const downloadRoutesCSV = () => {
+    const headers = ['Route Name', 'Visits', 'Shops', 'Primary Region'];
+    const rows = repRoutes.map(r => [
+      `"${r.route_name}"`,
+      r.visits,
+      r.shops,
+      r.primary_region,
+    ]);
+    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_routes.csv`);
+  };
+
+  const handleDownload = viewMode === 'days' ? downloadDaysCSV
+    : viewMode === 'routes' ? downloadRoutesCSV
+    : downloadShopsCSV;
 
   return (
     <div
@@ -135,7 +180,7 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
 
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#1E3A5F' }}>{repName}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#1E3A5F' }}>{repData?.name ?? repName}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
               {repData?.role && (
                 <span style={{
@@ -247,7 +292,7 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
               letterSpacing: '0.05em',
             }}
           >
-            {v === 'shops' ? `Shops (${filteredShops.length})` : v === 'days' ? `Days (${dailyActivity.length})` : `Routes (${repRoutes.length})`}
+            {v === 'shops' ? `Shops (${uniqueShopCount ?? '…'})` : v === 'days' ? `Days (${dailyActivity.length})` : `Routes (${repRoutes.length})`}
           </button>
         ))}
       </div>
@@ -279,7 +324,7 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
               ))}
             </div>
 
-            {filteredShops.slice(0, 200).map((shop, i) => (
+            {filteredShops.slice(0, shopsDisplayLimit).map((shop, i) => (
               <div
                 key={`${shop.shop_id}-${i}`}
                 style={{
@@ -305,6 +350,25 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
                 <div style={{ fontSize: 10, color: '#C9963E', fontWeight: 600 }}>{shop.visit_count}×</div>
               </div>
             ))}
+            {shopsDisplayLimit < filteredShops.length && (
+              <button
+                onClick={() => setShopsDisplayLimit(n => n + PAGE_SIZE)}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: '#F9FAFB',
+                  border: 'none',
+                  borderTop: '1px solid rgba(0,0,0,0.06)',
+                  color: '#1565C0',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, system-ui, sans-serif',
+                }}
+              >
+                Load more ({filteredShops.length - shopsDisplayLimit} remaining)
+              </button>
+            )}
           </>
         ) : viewMode === 'days' ? (
           <>
@@ -386,7 +450,7 @@ export default function RepActivityPanel({ repName, repData, routeSummary, onClo
       {/* Footer */}
       <div style={{ padding: '8px 10px', borderTop: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
         <button
-          onClick={downloadCSV}
+          onClick={handleDownload}
           style={{
             width: '100%',
             padding: '7px',

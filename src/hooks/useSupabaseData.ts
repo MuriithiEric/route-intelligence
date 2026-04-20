@@ -31,6 +31,7 @@ export function useSupabaseData(): AppData {
     routeSummary: [],
     userGroupRegions: [],
     customerCounts: null,
+    routeCount: null,
     loading: true,
   });
 
@@ -42,7 +43,7 @@ export function useSupabaseData(): AppData {
 
     async function loadMountData() {
       try {
-        const [ttmResult, ugResult, rsResult, ugrResult, countsResult] = await Promise.all([
+        const [ttmResult, ugResult, rsResult, ugrResult, countsResult, routeCountResult] = await Promise.all([
           cachedQuery<TTMSummary[]>('ttm_summary:all', async () => {
             const { data, error } = await supabase.from('ttm_summary').select('*');
             if (error) throw error;
@@ -85,6 +86,13 @@ export function useSupabaseData(): AppData {
               total:            all.count  ?? 0,
             };
           }),
+          cachedQuery<number | null>('route_summary:count', async () => {
+            const { count, error } = await supabase
+              .from('route_summary')
+              .select('*', { count: 'exact', head: true });
+            if (error) return null;
+            return count;
+          }),
         ]);
 
         setData({
@@ -93,6 +101,7 @@ export function useSupabaseData(): AppData {
           routeSummary: rsResult,
           userGroupRegions: ugrResult,
           customerCounts: countsResult,
+          routeCount: routeCountResult,
           loading: false,
         });
       } catch (err) {

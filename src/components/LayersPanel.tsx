@@ -3,7 +3,13 @@ import { Layers } from 'lucide-react';
 import { useLayers } from '../context/AppContext';
 import type { LayerState, Tier } from '../types';
 
-export default function LayersPanel() {
+interface LayersPanelProps {
+  fieldStaffCount?: number;
+  customerCount?: number;
+  routeCount?: number;
+}
+
+export default function LayersPanel({ fieldStaffCount, customerCount, routeCount }: LayersPanelProps) {
   const { layers, setLayers } = useLayers();
 
   const toggle = (key: keyof LayerState) => {
@@ -14,9 +20,6 @@ export default function LayersPanel() {
     setLayers(prev => ({ ...prev, customerTier: tier, customerUniverse: true }));
   };
 
-  const setRouteType = (type: 'primary' | 'secondary' | 'both') => {
-    setLayers(prev => ({ ...prev, routeType: type }));
-  };
 
   const Row = ({
     label,
@@ -123,7 +126,7 @@ export default function LayersPanel() {
 
       <Row
         label="Field Staff"
-        count="95"
+        count={fieldStaffCount != null ? fieldStaffCount.toLocaleString() : undefined}
         active={layers.fieldStaff}
         onToggle={() => toggle('fieldStaff')}
         color="#C9963E"
@@ -131,7 +134,7 @@ export default function LayersPanel() {
 
       <Row
         label="Customer Universe"
-        count="79,638"
+        count={customerCount != null ? customerCount.toLocaleString() : undefined}
         active={layers.customerUniverse}
         onToggle={() => toggle('customerUniverse')}
         color="#7E57C2"
@@ -166,50 +169,12 @@ export default function LayersPanel() {
 
       <Row
         label="Routes"
-        count="539"
+        count={routeCount != null ? routeCount.toLocaleString() : undefined}
         active={layers.routes}
         onToggle={() => toggle('routes')}
         color="#1565C0"
       />
 
-      {/* Route type sub-options */}
-      {layers.routes && (
-        <div style={{ paddingLeft: 14, paddingBottom: 4, display: 'flex', gap: 4 }}>
-          {(['primary', 'secondary', 'both'] as const).map(type => (
-            <button
-              key={type}
-              onClick={() => setRouteType(type)}
-              style={{
-                padding: '2px 6px',
-                borderRadius: 4,
-                border: `1px solid ${layers.routeType === type ? '#1565C0' : 'rgba(0,0,0,0.1)'}`,
-                background: layers.routeType === type ? '#E3F2FD' : 'transparent',
-                color: layers.routeType === type ? '#1565C0' : '#6B7280',
-                fontSize: 10,
-                cursor: 'pointer',
-                fontFamily: 'Inter, system-ui, sans-serif',
-                textTransform: 'capitalize',
-              }}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <Row
-        label="Density Heatmap"
-        active={layers.heatmap}
-        onToggle={() => toggle('heatmap')}
-        color="#E07B39"
-      />
-
-      <Row
-        label="County Boundaries"
-        active={layers.countyBoundaries}
-        onToggle={() => toggle('countyBoundaries')}
-        color="#1E3A5F"
-      />
     </div>
   );
 }

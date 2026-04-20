@@ -63,7 +63,7 @@ function buildContext(
   // Current view context
   lines.push('## Current Dashboard State');
   if (selectedRep) {
-    const rep = ttmSummary.find(r => r.name === selectedRep);
+    const rep = ttmSummary.find(r => r.raw_name === selectedRep);
     if (rep) {
       lines.push(`Selected rep: ${rep.name} (${rep.role}, ${rep.primary_region}) — ${rep.total_visits} visits, ${rep.unique_shops} shops, ${rep.coverage_pct.toFixed(1)}% coverage`);
     }
