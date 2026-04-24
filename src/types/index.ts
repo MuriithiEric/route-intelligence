@@ -13,6 +13,7 @@ export interface TTMSummary {
   field_days: number;
   visits_per_day: number;
   last_active: string;
+  rep_status?: string;
 }
 
 export interface UserGroup {
@@ -22,6 +23,8 @@ export interface UserGroup {
   unique_shops: number;
   coverage_pct: number;
   field_days: number;
+  active_rep_count?: number;
+  inactive_rep_count?: number;
 }
 
 export interface RouteSummary {
@@ -117,6 +120,7 @@ export interface RepProfile {
   coverage_pct: number;
   field_days: number;
   visits_per_day: number;
+  rep_status?: string;
 }
 
 export interface UserGroupPeople {

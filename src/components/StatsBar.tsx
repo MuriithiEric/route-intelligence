@@ -19,6 +19,7 @@ interface StatCard {
   value: number | string;
   suffix?: string;
   coverageValue?: number;
+  valueFontSize?: number;
 }
 
 function AnimatedNumber({ value }: { value: number }) {
@@ -51,7 +52,7 @@ function AnimatedNumber({ value }: { value: number }) {
 }
 
 export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, customerCounts, loading }: StatsBarProps) {
-  const { filters, selectedRep } = useAppContext();
+  const { filters, selectedRep, repStatusFilter } = useAppContext();
 
   const stats = useMemo(() => {
     if (selectedRep) {
@@ -96,14 +97,27 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       ? userGroups.reduce((sum, g) => sum + g.coverage_pct, 0) / userGroups.length
       : 30.7;
 
+    const activeReps = ttmSummary.filter(r => r.rep_status !== 'Inactive').length;
+    const inactiveReps = ttmSummary.filter(r => r.rep_status === 'Inactive').length;
+    const totalReps = ttmSummary.length;
+
+    let activeStaff: number | string;
+    if (repStatusFilter === 'active') {
+      activeStaff = activeReps;
+    } else if (repStatusFilter === 'inactive') {
+      activeStaff = inactiveReps;
+    } else {
+      activeStaff = `${activeReps} Active / ${totalReps} Total`;
+    }
+
     return {
       customerUniverse: customerCounts?.total ?? 0,
       shopsVisited: totalShops || 26294,
-      activeStaff: ttmSummary.length,
+      activeStaff,
       avgVisit: 11.2,
       nationalCoverage: avgCoverage || 30.7,
     };
-  }, [filters, selectedRep, userGroups, userGroupRegions, ttmSummary]);
+  }, [filters, selectedRep, userGroups, userGroupRegions, ttmSummary, repStatusFilter]);
 
   const coverageColor = stats.nationalCoverage < 10
     ? '#C0392B'
@@ -129,6 +143,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       icon: <Users size={16} color="#2196F3" />,
       label: 'ACTIVE FIELD STAFF',
       value: stats.activeStaff,
+      valueFontSize: typeof stats.activeStaff === 'string' ? 11 : 15,
     },
     {
       bg: '#F3E5F5',
@@ -197,7 +212,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
                 </div>
                 <div
                   style={{
-                    fontSize: 15,
+                    fontSize: card.valueFontSize ?? 15,
                     fontWeight: 700,
                     color: card.coverageValue !== undefined ? coverageColor : '#1E3A5F',
                     lineHeight: 1.1,

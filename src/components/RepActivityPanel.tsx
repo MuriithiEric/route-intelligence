@@ -194,6 +194,33 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
                   {repData.role}
                 </span>
               )}
+              {/* Status badge */}
+              {(() => {
+                const isActive = repData?.rep_status !== 'Inactive';
+                return (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                    padding: '2px 6px',
+                    borderRadius: 10,
+                    background: isActive ? '#DCFCE7' : '#F3F4F6',
+                    color: isActive ? '#16A34A' : '#6B7280',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                  }}>
+                    <span style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      background: isActive ? '#16A34A' : '#9CA3AF',
+                      display: 'inline-block',
+                    }} />
+                    {isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </span>
+                );
+              })()}
               <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#6B7280' }}>
                 <MapPin size={10} />
                 {repData?.primary_region || '—'}
@@ -209,6 +236,22 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
             <X size={16} color="#9CA3AF" />
           </button>
         </div>
+
+        {/* Inactive warning bar */}
+        {repData?.rep_status === 'Inactive' && (
+          <div style={{
+            marginTop: 8,
+            padding: '6px 10px',
+            background: '#FFFBEB',
+            border: '1px solid #FDE68A',
+            borderRadius: 6,
+            fontSize: 11,
+            color: '#92400E',
+            fontWeight: 500,
+          }}>
+            ⚠️ This rep is currently inactive
+          </div>
+        )}
 
         {/* Stats — sourced from ttm_summary, same as leaderboard */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 10 }}>

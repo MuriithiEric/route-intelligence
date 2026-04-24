@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import type { FilterState, LayerState, Tier, Region } from '../types';
 
+export type RepStatusFilter = 'all' | 'active' | 'inactive';
+
 interface AppContextValue {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
@@ -11,6 +13,8 @@ interface AppContextValue {
   selectedShop: string | null;
   setSelectedShop: (shop: string | null) => void;
   clearFilters: () => void;
+  repStatusFilter: RepStatusFilter;
+  setRepStatusFilter: React.Dispatch<React.SetStateAction<RepStatusFilter>>;
 }
 
 const defaultFilters: FilterState = {
@@ -37,6 +41,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [layers, setLayers] = useState<LayerState>(defaultLayers);
   const [selectedRep, setSelectedRepState] = useState<string | null>(null);
   const [selectedShop, setSelectedShop] = useState<string | null>(null);
+  const [repStatusFilter, setRepStatusFilter] = useState<RepStatusFilter>('all');
 
   const setSelectedRep = useCallback((rep: string | null) => {
     setSelectedRepState(rep);
@@ -63,7 +68,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     selectedShop,
     setSelectedShop,
     clearFilters,
-  }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters]);
+    repStatusFilter,
+    setRepStatusFilter,
+  }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters, repStatusFilter]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

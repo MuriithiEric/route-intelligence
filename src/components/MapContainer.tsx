@@ -355,9 +355,16 @@ function FieldStaffLayer({
 }) {
   const { selectedRep } = useAppContext();
 
+  // Render inactive first so active markers appear on top (SVG paint order)
+  const sorted = [...ttmSummary].sort((a, b) => {
+    const aInactive = a.rep_status === 'Inactive' ? 0 : 1;
+    const bInactive = b.rep_status === 'Inactive' ? 0 : 1;
+    return aInactive - bInactive;
+  });
+
   return (
     <MarkerClusterGroup chunkedLoading showCoverageOnHover={false}>
-      {ttmSummary.map(rep => {
+      {sorted.map(rep => {
         const centroid = resolveRegionCentroid(rep.primary_region);
 
         // Jitter based on id to spread overlapping markers
@@ -367,7 +374,9 @@ function FieldStaffLayer({
         const jitterLng = (Math.floor(idNum / 100) % 100 - 50) * 0.004;
 
         const pos: LatLngTuple = [centroid[0] + jitterLat, centroid[1] + jitterLng];
-        const color = GROUP_COLOURS[rep.role] || '#6B7280';
+        const isInactive = rep.rep_status === 'Inactive';
+        const groupColor = GROUP_COLOURS[rep.role] || '#6B7280';
+        const markerColor = isInactive ? '#9E9E9E' : groupColor;
         const isSelected = selectedRep === rep.raw_name;
 
         return (
@@ -376,9 +385,9 @@ function FieldStaffLayer({
             center={pos}
             radius={isSelected ? 14 : 10}
             pathOptions={{
-              color: isSelected ? '#C9963E' : color,
-              fillColor: color,
-              fillOpacity: 0.9,
+              color: isSelected ? '#C9963E' : markerColor,
+              fillColor: markerColor,
+              fillOpacity: isInactive ? 0.35 : 0.9,
               weight: isSelected ? 3 : 1.5,
             }}
             eventHandlers={{ click: () => onRepClick(rep) }}
@@ -397,6 +406,12 @@ function FieldStaffLayer({
                 <span style={{ color: '#6B7280', fontSize: 11 }}>{rep.role} · {rep.primary_region}</span>
                 <br />
                 <span style={{ color: '#9CA3AF', fontSize: 10 }}>{rep.total_visits?.toLocaleString()} visits</span>
+                {isInactive && (
+                  <>
+                    <br />
+                    <span style={{ color: '#9E9E9E', fontSize: 10 }}>● Inactive</span>
+                  </>
+                )}
               </div>
             </Tooltip>
           </CircleMarker>

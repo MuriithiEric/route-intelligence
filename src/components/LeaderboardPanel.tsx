@@ -14,6 +14,34 @@ interface LeaderboardPanelProps {
 
 type Tab = 'visits' | 'shops' | 'coverage' | 'visits_day';
 
+function StatusPill({ status }: { status?: string }) {
+  const isActive = status !== 'Inactive';
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 3,
+      padding: '1px 5px',
+      borderRadius: 10,
+      background: isActive ? '#DCFCE7' : '#F3F4F6',
+      color: isActive ? '#16A34A' : '#6B7280',
+      fontSize: 8,
+      fontWeight: 700,
+      letterSpacing: '0.04em',
+      flexShrink: 0,
+    }}>
+      <span style={{
+        width: 5,
+        height: 5,
+        borderRadius: '50%',
+        background: isActive ? '#16A34A' : '#9CA3AF',
+        display: 'inline-block',
+      }} />
+      {isActive ? 'ACTIVE' : 'INACTIVE'}
+    </span>
+  );
+}
+
 export default function LeaderboardPanel({
   ttmSummary,
   userGroupRegions,
@@ -21,21 +49,52 @@ export default function LeaderboardPanel({
   onToggle,
   filterBarBottom,
 }: LeaderboardPanelProps) {
-  const { filters, setSelectedRep, selectedRep } = useAppContext();
+  const { filters, setSelectedRep, selectedRep, repStatusFilter, setRepStatusFilter } = useAppContext();
   const [tab, setTab] = useState<Tab>('visits');
 
-  const filteredReps = useMemo(() => {
+  const baseReps = useMemo(() => {
     let reps = [...ttmSummary];
     if (filters.userGroup) {
       reps = reps.filter(r => r.role === filters.userGroup);
     }
-    switch (tab) {
-      case 'visits': return reps.sort((a, b) => b.total_visits - a.total_visits);
-      case 'shops': return reps.sort((a, b) => b.unique_shops - a.unique_shops);
-      case 'coverage': return reps.sort((a, b) => b.coverage_pct - a.coverage_pct);
-      case 'visits_day': return reps.sort((a, b) => b.visits_per_day - a.visits_per_day);
+    return reps;
+  }, [ttmSummary, filters.userGroup]);
+
+  const activeCount = useMemo(() =>
+    baseReps.filter(r => r.rep_status !== 'Inactive').length,
+    [baseReps]
+  );
+
+  const inactiveCount = useMemo(() =>
+    baseReps.filter(r => r.rep_status === 'Inactive').length,
+    [baseReps]
+  );
+
+  const filteredReps = useMemo(() => {
+    let reps = [...baseReps];
+    if (repStatusFilter === 'active') {
+      reps = reps.filter(r => r.rep_status !== 'Inactive');
+    } else if (repStatusFilter === 'inactive') {
+      reps = reps.filter(r => r.rep_status === 'Inactive');
     }
-  }, [ttmSummary, filters.userGroup, tab]);
+
+    const sortFn = (a: TTMSummary, b: TTMSummary) => {
+      switch (tab) {
+        case 'visits': return b.total_visits - a.total_visits;
+        case 'shops': return b.unique_shops - a.unique_shops;
+        case 'coverage': return b.coverage_pct - a.coverage_pct;
+        case 'visits_day': return b.visits_per_day - a.visits_per_day;
+      }
+    };
+
+    if (repStatusFilter === 'all') {
+      const active = reps.filter(r => r.rep_status !== 'Inactive').sort(sortFn);
+      const inactive = reps.filter(r => r.rep_status === 'Inactive').sort(sortFn);
+      return [...active, ...inactive];
+    }
+
+    return reps.sort(sortFn);
+  }, [baseReps, repStatusFilter, tab]);
 
   const metricValue = (rep: TTMSummary) => {
     switch (tab) {
@@ -43,17 +102,6 @@ export default function LeaderboardPanel({
       case 'shops': return rep.unique_shops.toLocaleString();
       case 'coverage': return `${rep.coverage_pct?.toFixed(1)}%`;
       case 'visits_day': return `${rep.visits_per_day?.toFixed(1)}/d`;
-    }
-  };
-
-  const maxValue = (rep: TTMSummary) => {
-    const max = filteredReps[0];
-    if (!max) return 0;
-    switch (tab) {
-      case 'visits': return max.total_visits;
-      case 'shops': return max.unique_shops;
-      case 'coverage': return max.coverage_pct;
-      case 'visits_day': return max.visits_per_day;
     }
   };
 
@@ -66,7 +114,8 @@ export default function LeaderboardPanel({
     }
   };
 
-  // CCO Summary data
+  const topActiveRep = filteredReps.find(r => r.rep_status !== 'Inactive') ?? filteredReps[0];
+
   const topPerformer = useMemo(() =>
     [...ttmSummary].sort((a, b) => b.total_visits - a.total_visits)[0],
     [ttmSummary]
@@ -78,6 +127,8 @@ export default function LeaderboardPanel({
       .sort((a, b) => a.coverage_pct - b.coverage_pct)[0],
     [userGroupRegions]
   );
+
+  const maxValue = filteredReps[0] ? repValue(filteredReps[0]) : 0;
 
   if (!isVisible) {
     return (
@@ -149,6 +200,45 @@ export default function LeaderboardPanel({
         <ChevronRight size={12} color="#6B7280" />
       </button>
 
+      {/* Panel header + status filter */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            LEADERBOARD
+          </span>
+          <span style={{ fontSize: 10, color: '#6B7280' }}>
+            <span style={{ color: '#16A34A', fontWeight: 600 }}>{activeCount} Active</span>
+            {' · '}
+            <span style={{ color: '#9CA3AF', fontWeight: 600 }}>{inactiveCount} Inactive</span>
+          </span>
+        </div>
+        {/* Status filter toggle */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {(['all', 'active', 'inactive'] as const).map(opt => (
+            <button
+              key={opt}
+              onClick={() => setRepStatusFilter(opt)}
+              style={{
+                flex: 1,
+                padding: '3px 0',
+                borderRadius: 6,
+                border: `1px solid ${repStatusFilter === opt ? '#1E3A5F' : 'rgba(0,0,0,0.08)'}`,
+                background: repStatusFilter === opt ? '#1E3A5F' : 'transparent',
+                color: repStatusFilter === opt ? '#FFFFFF' : '#6B7280',
+                fontSize: 10,
+                fontWeight: repStatusFilter === opt ? 700 : 400,
+                cursor: 'pointer',
+                fontFamily: 'Inter, system-ui, sans-serif',
+                textTransform: 'capitalize',
+                transition: 'all 0.15s',
+              }}
+            >
+              {opt === 'all' ? 'All' : opt === 'active' ? 'Active' : 'Inactive'}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* CCO Summary */}
       <div style={{ padding: 10, borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
@@ -193,11 +283,11 @@ export default function LeaderboardPanel({
       {/* Rep list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {filteredReps.map((rep, i) => {
-          const isTop = i === 0;
+          const isInactive = rep.rep_status === 'Inactive';
+          const isTop = i === 0 && !isInactive;
           const isSelected = selectedRep === rep.raw_name;
           const color = GROUP_COLOURS[rep.role] || '#6B7280';
-          const max = maxValue(filteredReps[0]);
-          const pct = max > 0 ? (repValue(rep) / max) * 100 : 0;
+          const pct = maxValue > 0 ? (repValue(rep) / maxValue) * 100 : 0;
 
           return (
             <div
@@ -210,6 +300,7 @@ export default function LeaderboardPanel({
                 background: isSelected ? `${color}0D` : isTop ? '#FFFBF0' : 'transparent',
                 cursor: 'pointer',
                 transition: 'background 0.15s',
+                opacity: isInactive && repStatusFilter === 'all' ? 0.4 : 1,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -223,7 +314,7 @@ export default function LeaderboardPanel({
                   width: 26,
                   height: 26,
                   borderRadius: '50%',
-                  background: color,
+                  background: isInactive ? '#9CA3AF' : color,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -235,10 +326,13 @@ export default function LeaderboardPanel({
                   {rep.name?.charAt(0) || '?'}
                 </div>
 
-                {/* Name + role + region */}
+                {/* Name + status + role + region */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#1E3A5F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {rep.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: '#1E3A5F', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      {rep.name}
+                    </span>
+                    <StatusPill status={rep.rep_status} />
                   </div>
                   <div style={{ fontSize: 9, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <span style={{ color, fontWeight: 500 }}>{rep.role}</span>
@@ -256,7 +350,7 @@ export default function LeaderboardPanel({
               {/* Progress bar */}
               <div style={{ marginLeft: 49, marginTop: 3 }}>
                 <div style={{ height: 3, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${pct}%`, background: isTop ? '#C9963E' : color, borderRadius: 2, transition: 'width 0.3s' }} />
+                  <div style={{ height: '100%', width: `${pct}%`, background: isTop ? '#C9963E' : (isInactive ? '#9CA3AF' : color), borderRadius: 2, transition: 'width 0.3s' }} />
                 </div>
               </div>
             </div>

@@ -88,10 +88,15 @@ export default function FilterBar({ userGroups, ttmSummary }: FilterBarProps) {
   }, [ttmSummary]);
 
   const groupOptions = useMemo(() =>
-    userGroups.map(g => ({
-      value: g.category,
-      label: `${g.category} — ${repCountByGroup[g.category] ?? g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`,
-    })), [userGroups, repCountByGroup]);
+    userGroups.map(g => {
+      const activeCount = g.active_rep_count;
+      const inactiveCount = g.inactive_rep_count;
+      const hasCounts = activeCount !== undefined && inactiveCount !== undefined;
+      const label = hasCounts
+        ? `${g.category} — ${activeCount} active · ${inactiveCount} inactive`
+        : `${g.category} — ${repCountByGroup[g.category] ?? g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`;
+      return { value: g.category, label };
+    }), [userGroups, repCountByGroup]);
 
   return (
     <div
