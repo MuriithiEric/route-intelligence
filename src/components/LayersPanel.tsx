@@ -9,6 +9,15 @@ interface LayersPanelProps {
   routeCount?: number;
 }
 
+const TIER_LEGEND: Array<{ key: Tier; label: string; color: string }> = [
+  { key: 'DISTRIBUTOR',   label: 'Distributor',   color: '#C0392B' },
+  { key: 'KEY ACCOUNT',  label: 'Key Account',   color: '#7E57C2' },
+  { key: 'HUB',          label: 'Hub',           color: '#C9963E' },
+  { key: 'STOCKIST',     label: 'Stockist',      color: '#E07B39' },
+  { key: 'MODERN TRADE', label: 'Modern Trade',  color: '#0E8C7A' },
+  { key: 'GENERAL TRADE',label: 'General Trade', color: '#9E9E9E' },
+];
+
 export default function LayersPanel({ fieldStaffCount, customerCount, routeCount }: LayersPanelProps) {
   const { layers, setLayers } = useLayers();
 
@@ -19,7 +28,6 @@ export default function LayersPanel({ fieldStaffCount, customerCount, routeCount
   const setTier = (tier: Tier | null) => {
     setLayers(prev => ({ ...prev, customerTier: tier, customerUniverse: true }));
   };
-
 
   const Row = ({
     label,
@@ -92,12 +100,7 @@ export default function LayersPanel({ fieldStaffCount, customerCount, routeCount
 
   const tierOptions: Array<{ key: Tier | null; label: string; color: string }> = [
     { key: null,            label: 'All tiers',    color: '#6B7280' },
-    { key: 'DISTRIBUTOR',   label: 'Distributor',  color: '#C0392B' },
-    { key: 'KEY ACCOUNT',   label: 'Key Account',  color: '#7E57C2' },
-    { key: 'HUB',           label: 'Hub',          color: '#C9963E' },
-    { key: 'STOCKIST',      label: 'Stockist',     color: '#E07B39' },
-    { key: 'MODERN TRADE',  label: 'Modern Trade', color: '#0E8C7A' },
-    { key: 'GENERAL TRADE', label: 'General Trade',color: '#9E9E9E' },
+    ...TIER_LEGEND,
   ];
 
   return (
@@ -140,31 +143,54 @@ export default function LayersPanel({ fieldStaffCount, customerCount, routeCount
         color="#7E57C2"
       />
 
-      {/* Tier sub-options */}
+      {/* Map dot legend — shows when Customer Universe layer is ON */}
       {layers.customerUniverse && (
-        <div style={{ paddingLeft: 14, paddingBottom: 4 }}>
-          {tierOptions.map(t => (
-            <button
-              key={t.key || 'all'}
-              onClick={() => setTier(t.key)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                width: '100%',
-                padding: '2px 4px',
-                background: layers.customerTier === t.key ? '#F0F9FF' : 'transparent',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: '#6B7280' }}>{t.label}</span>
-            </button>
-          ))}
-        </div>
+        <>
+          {/* Mini color legend */}
+          <div style={{ paddingLeft: 14, paddingTop: 2, paddingBottom: 4, borderBottom: '1px solid rgba(0,0,0,0.06)', marginBottom: 4 }}>
+            <div style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+              Map Legend
+            </div>
+            {TIER_LEGEND.map(t => (
+              <div key={t.key} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 0' }}>
+                <span style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: t.color,
+                  display: 'inline-block',
+                  flexShrink: 0,
+                }} />
+                <span style={{ fontSize: 11, color: '#6B7280' }}>{t.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Tier filter sub-options */}
+          <div style={{ paddingLeft: 14, paddingBottom: 4 }}>
+            {tierOptions.map(t => (
+              <button
+                key={t.key || 'all'}
+                onClick={() => setTier(t.key)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  width: '100%',
+                  padding: '2px 4px',
+                  background: layers.customerTier === t.key ? '#F0F9FF' : 'transparent',
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: '#6B7280' }}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
 
       <Row
@@ -174,7 +200,6 @@ export default function LayersPanel({ fieldStaffCount, customerCount, routeCount
         onToggle={() => toggle('routes')}
         color="#1565C0"
       />
-
     </div>
   );
 }

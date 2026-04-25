@@ -57,14 +57,26 @@ html, body, #root {
   animation: countUp 0.3s ease-out;
 }
 
-/* Panel slide-in */
+/* Panel slide-in from right */
 @keyframes slideInRight {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 
 .slide-in-right {
-  animation: slideInRight 0.25s ease-out;
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* Panel slide-up from bottom (compare panel) */
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Backdrop fade-in */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Pulse dot */
@@ -184,4 +196,25 @@ html, body, #root {
 
 .driver-overlay {
   background: rgba(0,0,0,0.45) !important;
+}
+
+/* ── FIX 8b: Mobile responsive ── */
+@media (max-width: 768px) {
+  /* Stats bar: horizontal scroll, no wrap */
+  .stats-bar-inner {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Compare panel: stack vertically */
+  .compare-panel-grid {
+    flex-direction: column !important;
+  }
+
+  /* Panels default smaller on mobile */
+  .leaderboard-panel {
+    width: 100% !important;
+    max-width: 320px;
+  }
 }

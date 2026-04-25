@@ -18,6 +18,13 @@ export default function ShopPopup({ customer, visitFrequency, onClose }: ShopPop
     return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  // FIX 6c: "Last visited: 20 Jan 2026 · 3× total visits" format
+  const lastVisitedLine = visitFrequency
+    ? `Last visited: ${formatDate(visitFrequency.last_visit)} · ${visitFrequency.visit_count}× total visits`
+    : customer.last_visit
+    ? `Last visited: ${formatDate(customer.last_visit)}`
+    : null;
+
   return (
     <div
       style={{
@@ -67,7 +74,6 @@ export default function ShopPopup({ customer, visitFrequency, onClose }: ShopPop
           { label: 'Region', value: customer.region },
           { label: 'Territory', value: customer.territory || '—' },
           { label: 'Channel', value: customer.channel },
-          { label: 'Last Visit', value: formatDate(customer.last_visit) },
           { label: 'Last Sale', value: formatDate(customer.last_sale) },
         ].map(row => (
           <div
@@ -86,6 +92,21 @@ export default function ShopPopup({ customer, visitFrequency, onClose }: ShopPop
           </div>
         ))}
 
+        {/* FIX 6c: last visited + visit count */}
+        {lastVisitedLine && (
+          <div style={{
+            marginTop: 6,
+            padding: '5px 8px',
+            background: '#F0F9FF',
+            borderRadius: 6,
+            fontSize: 11,
+            color: '#1565C0',
+            fontWeight: 500,
+          }}>
+            {lastVisitedLine}
+          </div>
+        )}
+
         {visitFrequency && (
           <>
             <div style={{ height: 1, background: 'rgba(0,0,0,0.08)', margin: '8px 0' }} />
@@ -93,7 +114,6 @@ export default function ShopPopup({ customer, visitFrequency, onClose }: ShopPop
             {[
               { label: 'Total visits by this rep', value: `${visitFrequency.visit_count}×` },
               { label: 'First visit', value: formatDate(visitFrequency.first_visit) },
-              { label: 'Last visit', value: formatDate(visitFrequency.last_visit) },
             ].map(row => (
               <div
                 key={row.label}

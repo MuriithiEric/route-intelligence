@@ -15,6 +15,16 @@ interface AppContextValue {
   clearFilters: () => void;
   repStatusFilter: RepStatusFilter;
   setRepStatusFilter: React.Dispatch<React.SetStateAction<RepStatusFilter>>;
+  // Compare feature
+  compareMode: boolean;
+  setCompareMode: React.Dispatch<React.SetStateAction<boolean>>;
+  compareRep1: string | null;
+  setCompareRep1: React.Dispatch<React.SetStateAction<string | null>>;
+  compareRep2: string | null;
+  setCompareRep2: React.Dispatch<React.SetStateAction<string | null>>;
+  // Universe panel
+  showUniversePanel: boolean;
+  setShowUniversePanel: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const defaultFilters: FilterState = {
@@ -42,6 +52,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedRep, setSelectedRepState] = useState<string | null>(null);
   const [selectedShop, setSelectedShop] = useState<string | null>(null);
   const [repStatusFilter, setRepStatusFilter] = useState<RepStatusFilter>('all');
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareRep1, setCompareRep1] = useState<string | null>(null);
+  const [compareRep2, setCompareRep2] = useState<string | null>(null);
+  const [showUniversePanel, setShowUniversePanel] = useState(false);
 
   const setSelectedRep = useCallback((rep: string | null) => {
     setSelectedRepState(rep);
@@ -56,6 +70,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setFilters(defaultFilters);
     setSelectedRepState(null);
     setSelectedShop(null);
+    setCompareMode(false);
+    setCompareRep1(null);
+    setCompareRep2(null);
   }, []);
 
   const value = useMemo(() => ({
@@ -70,7 +87,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     clearFilters,
     repStatusFilter,
     setRepStatusFilter,
-  }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters, repStatusFilter]);
+    compareMode,
+    setCompareMode,
+    compareRep1,
+    setCompareRep1,
+    compareRep2,
+    setCompareRep2,
+    showUniversePanel,
+    setShowUniversePanel,
+  }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters, repStatusFilter,
+       compareMode, compareRep1, compareRep2, showUniversePanel]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -81,7 +107,6 @@ export function useAppContext(): AppContextValue {
   return ctx;
 }
 
-// Selector hooks to avoid unnecessary re-renders
 export function useFilters() {
   const { filters } = useAppContext();
   return filters;

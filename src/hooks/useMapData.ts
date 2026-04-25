@@ -8,6 +8,23 @@ interface BoundingBox {
   minLng: number; maxLng: number;
 }
 
+function mapShopRow(row: Record<string, unknown>): ShopVisitRow {
+  const cust = row.customers as Record<string, string> | null;
+  const vf = row.visit_frequency as Record<string, unknown> | null;
+  return {
+    shop_id: row.shop_id as string,
+    shop_name: row.shop_name as string,
+    cat: cust?.cat || null,
+    tier: cust?.tier || null,
+    region: row.region as string,
+    check_in: row.check_in as string,
+    duration: row.duration as number,
+    visit_count: (vf?.visit_count as number) || 1,
+    first_visit: (vf?.first_visit as string) || row.check_in as string,
+    last_visit: (vf?.last_visit as string) || row.check_in as string,
+  };
+}
+
 export function useMapData() {
   const fetchCustomersInBounds = useCallback(async (
     bounds: BoundingBox,
@@ -29,8 +46,6 @@ export function useMapData() {
         query = query.eq('cat', tier);
       }
 
-      // Tier-filtered queries are scoped to viewport + one category, so the result set is small enough to fetch fully.
-      // The all-tiers path keeps a 5000 cap to avoid DOM overload when no filter is active.
       const { data, error } = await (tier ? query : query.limit(5000));
       if (error) throw error;
       return data || [];
@@ -108,7 +123,6 @@ export function useMapData() {
         .order('check_in', { ascending: false });
 
       if (error) {
-        // Fallback: fetch visits without join
         const { data: visitsData, error: vErr } = await supabase
           .from('visits')
           .select('shop_id,shop_name,region,check_in,duration')
@@ -129,25 +143,64 @@ export function useMapData() {
         }));
       }
 
-      return (data || []).map((row: Record<string, unknown>) => {
-        const cust = row.customers as Record<string, string> | null;
-        const vf = row.visit_frequency as Record<string, unknown> | null;
-        return {
-          shop_id: row.shop_id as string,
-          shop_name: row.shop_name as string,
-          cat: cust?.cat || null,
-          tier: cust?.tier || null,
-          region: row.region as string,
-          check_in: row.check_in as string,
-          duration: row.duration as number,
-          visit_count: (vf?.visit_count as number) || 1,
-          first_visit: (vf?.first_visit as string) || row.check_in as string,
-          last_visit: (vf?.last_visit as string) || row.check_in as string,
-        };
-      });
+      return (data || []).map(mapShopRow);
     });
   }, []);
 
+  // Paginated, no-cache fetch used specifically for CSV export — guarantees all rows regardless of server max_rows.
+  const fetchAllRepShopVisitsForCSV = useCallback(async (repName: string): Promise<ShopVisitRow[]> => {
+    const PAGE = 1000;
+    const all: ShopVisitRow[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('visits')
+        .select(`
+          shop_id,
+          shop_name,
+          region,
+          check_in,
+          duration,
+          customers!left(cat, tier),
+          visit_frequency!left(visit_count, first_visit, last_visit)
+        `)
+        .eq('rep_name', repName)
+        .order('check_in', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error || !data || data.length === 0) break;
+      all.push(...data.map(mapShopRow));
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    // Fallback: if join failed, fetch plain visits
+    if (all.length === 0) {
+      let from2 = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from('visits')
+          .select('shop_id,shop_name,region,check_in,duration')
+          .eq('rep_name', repName)
+          .order('check_in', { ascending: false })
+          .range(from2, from2 + PAGE - 1);
+        if (error || !data || data.length === 0) break;
+        all.push(...data.map((v: Record<string, unknown>) => ({
+          shop_id: v.shop_id as string,
+          shop_name: v.shop_name as string,
+          cat: null,
+          tier: null,
+          region: v.region as string,
+          check_in: v.check_in as string,
+          duration: v.duration as number,
+          visit_count: 1,
+          first_visit: v.check_in as string,
+          last_visit: v.check_in as string,
+        })));
+        if (data.length < PAGE) break;
+        from2 += PAGE;
+      }
+    }
+    return all;
+  }, []);
 
   const fetchVisitFrequency = useCallback(async (repName: string): Promise<VisitFrequency[]> => {
     const key = `visit_frequency:${repName}`;
@@ -167,7 +220,8 @@ export function useMapData() {
       const { data, error } = await supabase
         .from('route_summary')
         .select('*')
-        .eq('rep_name', repName);
+        .eq('rep_name', repName)
+        .order('visits', { ascending: false });
       if (error) throw error;
       return data || [];
     });
@@ -180,6 +234,7 @@ export function useMapData() {
     fetchRepProfile,
     fetchRepDailyActivity,
     fetchRepShopVisits,
+    fetchAllRepShopVisitsForCSV,
     fetchVisitFrequency,
     fetchRepRoutes,
   };

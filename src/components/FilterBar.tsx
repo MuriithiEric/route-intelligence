@@ -77,7 +77,7 @@ function Select({
 }
 
 export default function FilterBar({ userGroups, ttmSummary }: FilterBarProps) {
-  const { filters, setFilters } = useAppContext();
+  const { filters, setFilters, selectedRep, setSelectedRep, clearFilters } = useAppContext();
 
   const repCountByGroup = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -97,6 +97,9 @@ export default function FilterBar({ userGroups, ttmSummary }: FilterBarProps) {
         : `${g.category} — ${repCountByGroup[g.category] ?? g.active_users} reps · ${g.coverage_pct?.toFixed(2)}%`;
       return { value: g.category, label };
     }), [userGroups, repCountByGroup]);
+
+  // FIX 8e: show "Clear all filters" when any filter is active
+  const anyFilterActive = !!(filters.userGroup || selectedRep);
 
   return (
     <div
@@ -123,30 +126,56 @@ export default function FilterBar({ userGroups, ttmSummary }: FilterBarProps) {
         onClear={() => setFilters(prev => ({ ...prev, userGroup: null, fieldStaff: null, route: null }))}
       />
 
-      {/* Clear */}
-      {filters.userGroup && (
+      {/* Active rep indicator */}
+      {selectedRep && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 6,
+          background: '#EFF6FF',
+          border: '1px solid #BFDBFE',
+          fontSize: 11,
+          color: '#1565C0',
+          fontWeight: 500,
+          flexShrink: 0,
+        }}>
+          <span>Rep: {ttmSummary.find(r => r.raw_name === selectedRep)?.name || selectedRep}</span>
+          <button
+            onClick={() => setSelectedRep(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
+          >
+            <X size={10} color="#9CA3AF" />
+          </button>
+        </div>
+      )}
+
+      {/* FIX 8e: Clear all filters pill */}
+      {anyFilterActive && (
         <>
           <div style={{ width: 1, height: 20, background: 'rgba(0,0,0,0.08)', flexShrink: 0 }} />
           <button
-            onClick={() => setFilters(prev => ({ ...prev, userGroup: null, fieldStaff: null, route: null }))}
+            onClick={clearFilters}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              padding: '3px 8px',
-              borderRadius: 6,
+              padding: '3px 10px',
+              borderRadius: 20,
               border: '1px solid #FCA5A5',
               background: '#FEF2F2',
               color: '#DC2626',
               fontSize: 11,
-              fontWeight: 500,
+              fontWeight: 600,
               cursor: 'pointer',
               fontFamily: 'Inter, system-ui, sans-serif',
               flexShrink: 0,
+              transition: 'background 0.15s',
             }}
           >
             <X size={10} />
-            Clear
+            Clear all filters
           </button>
         </>
       )}

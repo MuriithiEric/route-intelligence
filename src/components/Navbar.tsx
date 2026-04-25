@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 import type { KRIUser } from '../hooks/useAuth';
 
 interface NavbarProps {
@@ -8,19 +9,30 @@ interface NavbarProps {
 }
 
 export default function Navbar({ onTourClick, user, onSignOut }: NavbarProps) {
-  const [syncTime, setSyncTime] = useState(new Date());
+  const [lastSync, setLastSync] = useState<Date | null>(null);
 
+  // FIX 8f: show most recent check_in from visits as "Last sync"
   useEffect(() => {
-    const interval = setInterval(() => setSyncTime(new Date()), 30000);
-    return () => clearInterval(interval);
+    supabase
+      .from('visits')
+      .select('check_in')
+      .order('check_in', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data && data[0]?.check_in) {
+          setLastSync(new Date(data[0].check_in));
+        }
+      });
   }, []);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-KE', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
+  const formatSyncTime = (date: Date) => {
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) {
+      return date.toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    if (diffDays === 1) return 'Yesterday';
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
   };
 
   return (
@@ -123,8 +135,11 @@ export default function Navbar({ onTourClick, user, onSignOut }: NavbarProps) {
           }}
         />
         <span style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F' }}>LIVE</span>
-        <span style={{ fontSize: 11, color: '#9CA3AF' }}>
-          Last sync {formatTime(syncTime)}
+        <span
+          style={{ fontSize: 11, color: '#9CA3AF' }}
+          title={lastSync ? `Data last updated: ${lastSync.toLocaleString('en-GB')}` : 'Checking data freshness…'}
+        >
+          Last sync {lastSync ? formatSyncTime(lastSync) : '…'}
         </span>
 
         {user && (

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { ChevronLeft, ChevronRight, Search, X, GitCompare } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { TTMSummary, UserGroupRegion } from '../types';
 import { GROUP_COLOURS } from '../types';
@@ -49,8 +49,13 @@ export default function LeaderboardPanel({
   onToggle,
   filterBarBottom,
 }: LeaderboardPanelProps) {
-  const { filters, setSelectedRep, selectedRep, repStatusFilter, setRepStatusFilter } = useAppContext();
+  const {
+    filters, setSelectedRep, selectedRep, repStatusFilter, setRepStatusFilter,
+    compareMode, setCompareMode, compareRep1, setCompareRep1, compareRep2, setCompareRep2,
+  } = useAppContext();
   const [tab, setTab] = useState<Tab>('visits');
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const baseReps = useMemo(() => {
     let reps = [...ttmSummary];
@@ -78,6 +83,12 @@ export default function LeaderboardPanel({
       reps = reps.filter(r => r.rep_status === 'Inactive');
     }
 
+    // FIX 6e: filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      reps = reps.filter(r => r.name.toLowerCase().includes(q));
+    }
+
     const sortFn = (a: TTMSummary, b: TTMSummary) => {
       switch (tab) {
         case 'visits': return b.total_visits - a.total_visits;
@@ -87,14 +98,14 @@ export default function LeaderboardPanel({
       }
     };
 
-    if (repStatusFilter === 'all') {
+    if (repStatusFilter === 'all' && !searchQuery.trim()) {
       const active = reps.filter(r => r.rep_status !== 'Inactive').sort(sortFn);
       const inactive = reps.filter(r => r.rep_status === 'Inactive').sort(sortFn);
       return [...active, ...inactive];
     }
 
     return reps.sort(sortFn);
-  }, [baseReps, repStatusFilter, tab]);
+  }, [baseReps, repStatusFilter, tab, searchQuery]);
 
   const metricValue = (rep: TTMSummary) => {
     switch (tab) {
@@ -121,14 +132,39 @@ export default function LeaderboardPanel({
     [ttmSummary]
   );
 
-  const lowestRegion = useMemo(() =>
-    [...userGroupRegions]
-      .filter(r => r.coverage_pct > 0)
-      .sort((a, b) => a.coverage_pct - b.coverage_pct)[0],
-    [userGroupRegions]
-  );
-
   const maxValue = filteredReps[0] ? repValue(filteredReps[0]) : 0;
+
+  // FIX 7: handle compare mode rep click
+  const handleRepClick = (rep: TTMSummary) => {
+    if (compareMode) {
+      if (compareRep1 === rep.raw_name) {
+        setCompareRep1(null);
+      } else if (compareRep2 === rep.raw_name) {
+        setCompareRep2(null);
+      } else if (!compareRep1) {
+        setCompareRep1(rep.raw_name);
+      } else if (!compareRep2) {
+        setCompareRep2(rep.raw_name);
+      } else {
+        // Both slots filled: replace rep2
+        setCompareRep2(rep.raw_name);
+      }
+    } else {
+      const isSelected = selectedRep === rep.raw_name;
+      setSelectedRep(isSelected ? null : rep.raw_name);
+    }
+  };
+
+  const toggleCompareMode = () => {
+    if (compareMode) {
+      setCompareMode(false);
+      setCompareRep1(null);
+      setCompareRep2(null);
+    } else {
+      setCompareMode(true);
+      setSelectedRep(null);
+    }
+  };
 
   if (!isVisible) {
     return (
@@ -206,12 +242,72 @@ export default function LeaderboardPanel({
           <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             LEADERBOARD
           </span>
-          <span style={{ fontSize: 10, color: '#6B7280' }}>
-            <span style={{ color: '#16A34A', fontWeight: 600 }}>{activeCount} Active</span>
-            {' · '}
-            <span style={{ color: '#9CA3AF', fontWeight: 600 }}>{inactiveCount} Inactive</span>
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>
+              <span style={{ color: '#16A34A', fontWeight: 600 }}>{activeCount} Active</span>
+              {' · '}
+              <span style={{ color: '#9CA3AF', fontWeight: 600 }}>{inactiveCount} Inactive</span>
+            </span>
+            {/* FIX 7: Compare button */}
+            <button
+              onClick={toggleCompareMode}
+              title={compareMode ? 'Exit compare mode' : 'Compare 2 reps side by side'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '2px 7px',
+                borderRadius: 6,
+                border: `1px solid ${compareMode ? '#1565C0' : 'rgba(0,0,0,0.1)'}`,
+                background: compareMode ? '#EFF6FF' : 'transparent',
+                color: compareMode ? '#1565C0' : '#6B7280',
+                fontSize: 10,
+                fontWeight: compareMode ? 700 : 400,
+                cursor: 'pointer',
+                fontFamily: 'Inter, system-ui, sans-serif',
+                transition: 'all 0.15s',
+              }}
+            >
+              <GitCompare size={10} />
+              {compareMode ? 'Exit' : 'Compare'}
+            </button>
+          </div>
         </div>
+
+        {/* Compare mode hint */}
+        {compareMode && (
+          <div style={{
+            padding: '4px 8px',
+            background: '#EFF6FF',
+            borderRadius: 6,
+            fontSize: 10,
+            color: '#1565C0',
+            marginBottom: 6,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+          }}>
+            <span style={{
+              width: 16, height: 16, borderRadius: 4,
+              background: compareRep1 ? '#C9963E' : 'rgba(0,0,0,0.1)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, fontWeight: 700, color: compareRep1 ? '#FFF' : '#9CA3AF',
+            }}>1</span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {compareRep1 ? ttmSummary.find(r => r.raw_name === compareRep1)?.name : 'Click a rep to select #1'}
+            </span>
+            <span style={{
+              width: 16, height: 16, borderRadius: 4,
+              background: compareRep2 ? '#1565C0' : 'rgba(0,0,0,0.1)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, fontWeight: 700, color: compareRep2 ? '#FFF' : '#9CA3AF',
+            }}>2</span>
+            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {compareRep2 ? ttmSummary.find(r => r.raw_name === compareRep2)?.name : 'Click a rep to select #2'}
+            </span>
+          </div>
+        )}
+
         {/* Status filter toggle */}
         <div style={{ display: 'flex', gap: 4 }}>
           {(['all', 'active', 'inactive'] as const).map(opt => (
@@ -253,6 +349,49 @@ export default function LeaderboardPanel({
         </div>
       </div>
 
+      {/* FIX 6e: Search box */}
+      <div style={{ padding: '6px 10px', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <Search size={12} color="#9CA3AF" style={{ position: 'absolute', left: 8, pointerEvents: 'none' }} />
+          <input
+            ref={searchRef}
+            id="leaderboard-search"
+            type="text"
+            placeholder="Search rep name..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '5px 28px 5px 26px',
+              border: '1px solid rgba(0,0,0,0.1)',
+              borderRadius: 6,
+              fontSize: 11,
+              color: '#1E3A5F',
+              background: '#F9FAFB',
+              fontFamily: 'Inter, system-ui, sans-serif',
+              outline: 'none',
+            }}
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{
+                position: 'absolute',
+                right: 6,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 2,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={10} color="#9CA3AF" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
         {([['visits', 'Visits'], ['shops', 'Shops'], ['coverage', 'Coverage'], ['visits_day', 'V/Day']] as [Tab, string][]).map(([key, label]) => (
@@ -282,22 +421,47 @@ export default function LeaderboardPanel({
 
       {/* Rep list */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* FIX 8g: no results message */}
+        {filteredReps.length === 0 && searchQuery && (
+          <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF' }}>
+            <div style={{ fontSize: 20, marginBottom: 6 }}>🔍</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 4 }}>
+              No reps match &ldquo;{searchQuery}&rdquo;
+            </div>
+            <button
+              onClick={() => setSearchQuery('')}
+              style={{ fontSize: 11, color: '#1565C0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif', textDecoration: 'underline' }}
+            >
+              Clear search
+            </button>
+          </div>
+        )}
+
         {filteredReps.map((rep, i) => {
           const isInactive = rep.rep_status === 'Inactive';
-          const isTop = i === 0 && !isInactive;
-          const isSelected = selectedRep === rep.raw_name;
+          const isTop = i === 0 && !isInactive && !searchQuery;
+          const isSelected = !compareMode && selectedRep === rep.raw_name;
+          const isCompare1 = compareMode && compareRep1 === rep.raw_name;
+          const isCompare2 = compareMode && compareRep2 === rep.raw_name;
           const color = GROUP_COLOURS[rep.role] || '#6B7280';
           const pct = maxValue > 0 ? (repValue(rep) / maxValue) * 100 : 0;
+
+          let leftBorderColor = 'transparent';
+          let bgColor = 'transparent';
+          if (isTop) { leftBorderColor = '#C9963E'; bgColor = '#FFFBF0'; }
+          if (isSelected) { leftBorderColor = color; bgColor = `${color}0D`; }
+          if (isCompare1) { leftBorderColor = '#C9963E'; bgColor = '#FFFBF0'; }
+          if (isCompare2) { leftBorderColor = '#1565C0'; bgColor = '#EFF6FF'; }
 
           return (
             <div
               key={rep.id}
-              onClick={() => setSelectedRep(isSelected ? null : rep.raw_name)}
+              onClick={() => handleRepClick(rep)}
               style={{
                 padding: '7px 10px',
                 borderBottom: '1px solid rgba(0,0,0,0.04)',
-                borderLeft: isTop ? '3px solid #C9963E' : isSelected ? `3px solid ${color}` : '3px solid transparent',
-                background: isSelected ? `${color}0D` : isTop ? '#FFFBF0' : 'transparent',
+                borderLeft: `3px solid ${leftBorderColor}`,
+                background: bgColor,
                 cursor: 'pointer',
                 transition: 'background 0.15s',
                 opacity: isInactive && repStatusFilter === 'all' ? 0.4 : 1,
@@ -314,16 +478,16 @@ export default function LeaderboardPanel({
                   width: 26,
                   height: 26,
                   borderRadius: '50%',
-                  background: isInactive ? '#9CA3AF' : color,
+                  background: isCompare1 ? '#C9963E' : isCompare2 ? '#1565C0' : isInactive ? '#9CA3AF' : color,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: '#FFFFFF',
-                  fontSize: 10,
+                  fontSize: isCompare1 || isCompare2 ? 9 : 10,
                   fontWeight: 700,
                   flexShrink: 0,
                 }}>
-                  {rep.name?.charAt(0) || '?'}
+                  {isCompare1 ? '①' : isCompare2 ? '②' : rep.name?.charAt(0) || '?'}
                 </div>
 
                 {/* Name + status + role + region */}

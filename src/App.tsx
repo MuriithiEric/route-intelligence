@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useCallback, useRef } from 'react';
+import React, { Suspense, lazy, useState, useCallback, useRef, useEffect } from 'react';
 import { AppProvider, useAppContext } from './context/AppContext';
 import { useSupabaseData } from './hooks/useSupabaseData';
 import { useAuth } from './hooks/useAuth';
@@ -11,6 +11,8 @@ import MapContainer from './components/MapContainer';
 import AskAI from './components/AskAI';
 import OnboardingTour from './components/OnboardingTour';
 import LoginPage from './components/LoginPage';
+import CustomerUniversePanel from './components/CustomerUniversePanel';
+import ComparePanel from './components/ComparePanel';
 
 // Lazy-loaded panels
 const LeaderboardPanel = lazy(() => import('./components/LeaderboardPanel'));
@@ -39,13 +41,50 @@ interface DashboardProps {
 
 function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: DashboardProps) {
   const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, routeCount, loading } = useSupabaseData();
-  const { selectedRep, setSelectedRep } = useAppContext();
+  const {
+    selectedRep, setSelectedRep,
+    compareMode, compareRep1, compareRep2, setCompareMode, setCompareRep1, setCompareRep2,
+    showUniversePanel, setShowUniversePanel,
+  } = useAppContext();
   const [leaderboardVisible, setLeaderboardVisible] = useState(true);
   const tourTriggerRef = useRef<(() => void) | null>(null);
 
   const handleCloseRep = useCallback(() => {
     setSelectedRep(null);
   }, [setSelectedRep]);
+
+  // FIX 8c: keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // ESC: close panels / exit compare mode
+      if (e.key === 'Escape') {
+        if (showUniversePanel) {
+          setShowUniversePanel(false);
+          return;
+        }
+        if (compareMode) {
+          setCompareMode(false);
+          setCompareRep1(null);
+          setCompareRep2(null);
+          return;
+        }
+        if (selectedRep) {
+          setSelectedRep(null);
+          return;
+        }
+      }
+      // /: focus leaderboard search
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+        e.preventDefault();
+        const el = document.getElementById('leaderboard-search');
+        if (el) (el as HTMLInputElement).focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [selectedRep, compareMode, showUniversePanel, setSelectedRep, setCompareMode, setCompareRep1, setCompareRep2, setShowUniversePanel]);
+
+  const showComparePanel = compareMode && (compareRep1 || compareRep2);
 
   return (
     <div
@@ -107,10 +146,11 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
             position: 'absolute',
             right: 0,
             top: 0,
-            bottom: 0,
+            bottom: showComparePanel ? '60vh' : 0,
             width: leaderboardVisible ? 320 : 36,
             zIndex: 900,
             pointerEvents: 'auto',
+            transition: 'bottom 0.3s ease-out',
           }}
         >
           <Suspense fallback={<PanelSkeleton width={leaderboardVisible ? 320 : 36} />}>
@@ -152,10 +192,11 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
           data-tour="layers"
           style={{
             position: 'absolute',
-            bottom: 0,
+            bottom: showComparePanel ? 'calc(60vh + 16px)' : 0,
             left: 0,
             zIndex: 800,
             pointerEvents: 'auto',
+            transition: 'bottom 0.3s ease-out',
           }}
         >
           <Suspense fallback={null}>
@@ -167,6 +208,20 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
           </Suspense>
         </div>
       </div>
+
+      {/* FIX 7: Compare panel — slides up from bottom */}
+      {showComparePanel && (
+        <ComparePanel ttmSummary={ttmSummary} />
+      )}
+
+      {/* FIX 4: Customer Universe slide-over panel */}
+      {showUniversePanel && (
+        <CustomerUniversePanel
+          customerCounts={customerCounts}
+          userGroupRegions={userGroupRegions}
+          onClose={() => setShowUniversePanel(false)}
+        />
+      )}
 
       {/* Ask AI — fixed, z-9999 */}
       <AskAI ttmSummary={ttmSummary} userGroups={userGroups} customerCounts={customerCounts} />
