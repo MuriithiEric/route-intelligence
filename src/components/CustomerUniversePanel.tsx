@@ -20,32 +20,11 @@ interface RegionRow {
 
 interface TierRow {
   tier: string;
+  tierKey: string;
   total: number;
   visited: number;
   unvisited: number;
   coverage: number;
-}
-
-// Canonical region display names
-const REGION_DISPLAY: Record<string, string> = {
-  'nairobi': 'Nairobi',
-  'nairobi - local': 'Nairobi',
-  'nairobi local': 'Nairobi',
-  'north rift': 'North Rift',
-  'north-rift': 'North Rift',
-  'south rift': 'South Rift',
-  'south-rift': 'South Rift',
-  'central': 'Central',
-  'lake': 'Lake',
-  'coast': 'Coast',
-  'nyanza': 'Nyanza',
-  'rift valley': 'North Rift',
-  'modern trade': 'Other',
-};
-
-function normalizeRegion(r: string): string {
-  const key = r.toLowerCase().trim();
-  return REGION_DISPLAY[key] || r;
 }
 
 const TIER_DEFS: Array<{ key: keyof CustomerCategoryCounts; label: string }> = [
@@ -57,85 +36,108 @@ const TIER_DEFS: Array<{ key: keyof CustomerCategoryCounts; label: string }> = [
   { key: 'HUB',           label: 'Hub' },
 ];
 
+// Known regions matching DB values (partial match approach)
+const KNOWN_REGIONS = [
+  'Nairobi',
+  'North Rift',
+  'South Rift',
+  'Central',
+  'Lake',
+  'Coast',
+  'Nyanza',
+];
+
+// Normalize region label for display
+function normalizeLabel(r: string): string {
+  const lower = r.toLowerCase();
+  if (lower.includes('nairobi')) return 'Nairobi';
+  if (lower.includes('north rift') || lower.includes('north-rift')) return 'North Rift';
+  if (lower.includes('south rift') || lower.includes('south-rift')) return 'South Rift';
+  if (lower.includes('central')) return 'Central';
+  if (lower.includes('lake')) return 'Lake';
+  if (lower.includes('coast')) return 'Coast';
+  if (lower.includes('nyanza')) return 'Nyanza';
+  if (lower.includes('rift valley')) return 'North Rift';
+  return r;
+}
+
 export default function CustomerUniversePanel({ customerCounts, userGroupRegions, onClose }: CustomerUniversePanelProps) {
   const { filters } = useAppContext();
   const [activeTab, setActiveTab] = useState<'region' | 'tier'>('region');
   const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
   const [loadingRegions, setLoadingRegions] = useState(true);
 
-  // Build region breakdown from userGroupRegions (aggregate visited across all categories per region)
-  // and fetch actual customer totals per region
   useEffect(() => {
     setLoadingRegions(true);
 
-    // Aggregate visited shops per normalised region from userGroupRegions
-    const visitedByRegion: Record<string, number> = {};
-    for (const row of userGroupRegions) {
-      const norm = normalizeRegion(row.region);
-      visitedByRegion[norm] = (visitedByRegion[norm] || 0) + row.unique_shops;
-    }
+    // Use COUNT queries per region — avoids fetching 79k rows just to group by region
+    // Each query uses ilike so it handles variants like "Nairobi - Local", "NORTH RIFT", etc.
+    const regionPatterns: Record<string, string> = {
+      'Nairobi':    'nairobi',
+      'North Rift': 'north%rift',
+      'South Rift': 'south%rift',
+      'Central':    'central',
+      'Lake':       'lake',
+      'Coast':      'coast',
+      'Nyanza':     'nyanza',
+    };
 
-    // Fetch customer counts per region from DB
-    supabase
-      .from('customers')
-      .select('region')
-      .then(({ data }) => {
-        if (!data) { setLoadingRegions(false); return; }
+    Promise.all(
+      Object.entries(regionPatterns).map(async ([label, pattern]) => {
+        const { count } = await supabase
+          .from('customers')
+          .select('id', { count: 'exact', head: true })
+          .ilike('region', `%${pattern}%`);
+        return { label, total: count || 0 };
+      })
+    ).then(counts => {
+      // Build visited counts from user_group_regions by normalising region names
+      const filtered = filters.userGroup
+        ? userGroupRegions.filter(r => r.category === filters.userGroup)
+        : userGroupRegions;
 
-        // Count totals per normalised region
-        const totalByRegion: Record<string, number> = {};
-        for (const row of data) {
-          if (!row.region) continue;
-          const norm = normalizeRegion(row.region);
-          totalByRegion[norm] = (totalByRegion[norm] || 0) + 1;
-        }
+      const visitedByNorm: Record<string, number> = {};
+      for (const row of filtered) {
+        const norm = normalizeLabel(row.region);
+        visitedByNorm[norm] = (visitedByNorm[norm] || 0) + row.unique_shops;
+      }
 
-        // Merge and dedupe; apply group filter if set
-        const filtered = filters.userGroup
-          ? userGroupRegions.filter(r => r.category === filters.userGroup)
-          : userGroupRegions;
+      const rows: RegionRow[] = counts
+        .filter(c => c.total > 0)
+        .map(({ label, total }) => {
+          const visited = Math.min(visitedByNorm[label] || 0, total);
+          return {
+            region: label,
+            total,
+            visited,
+            coverage: total > 0 ? (visited / total) * 100 : 0,
+          };
+        })
+        .sort((a, b) => b.total - a.total);
 
-        const visitedFiltered: Record<string, number> = {};
-        for (const row of filtered) {
-          const norm = normalizeRegion(row.region);
-          visitedFiltered[norm] = (visitedFiltered[norm] || 0) + row.unique_shops;
-        }
-
-        const rows: RegionRow[] = Object.entries(totalByRegion)
-          .filter(([region]) => region !== 'Other' || (totalByRegion['Other'] || 0) > 100)
-          .map(([region, total]) => {
-            const visited = Math.min(visitedFiltered[region] || 0, total);
-            return {
-              region,
-              total,
-              visited,
-              coverage: total > 0 ? (visited / total) * 100 : 0,
-            };
-          })
-          .sort((a, b) => b.total - a.total);
-
-        setRegionRows(rows);
-        setLoadingRegions(false);
-      });
+      setRegionRows(rows);
+      setLoadingRegions(false);
+    });
   }, [userGroupRegions, filters.userGroup]);
 
   // Build tier breakdown
   const tierRows = useMemo((): TierRow[] => {
     if (!customerCounts) return [];
 
-    // Estimate visited per tier: sum unique_shops across all user group regions for context
-    // Since we don't have per-tier visited data directly, estimate from visit proportion
-    const totalVisited = userGroupRegions
-      .filter(r => !filters.userGroup || r.category === filters.userGroup)
-      .reduce((sum, r) => sum + r.unique_shops, 0);
+    const filtered = filters.userGroup
+      ? userGroupRegions.filter(r => r.category === filters.userGroup)
+      : userGroupRegions;
+
+    const totalVisited = filtered.reduce((sum, r) => sum + r.unique_shops, 0);
     const totalCustomers = customerCounts.total || 1;
-    const visitRatio = totalVisited / totalCustomers;
+    const visitRatio = Math.min(totalVisited / totalCustomers, 1);
 
     return TIER_DEFS.map(({ key, label }) => {
       const total = key === 'total' ? 0 : (customerCounts[key] as number) || 0;
       const visited = Math.round(total * visitRatio);
       return {
         tier: label,
+        tierKey: String(key),
         total,
         visited: Math.min(visited, total),
         unvisited: Math.max(total - visited, 0),
@@ -147,8 +149,8 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
   const totalOutlets = customerCounts?.total || 0;
 
   const CoverageBar = ({ pct, color }: { pct: number; color: string }) => (
-    <div style={{ height: 4, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden', marginTop: 2 }}>
-      <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+    <div style={{ height: 4, background: '#F3F4F6', borderRadius: 2, overflow: 'hidden', marginTop: 3 }}>
+      <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 2, transition: 'width 0.5s ease-out' }} />
     </div>
   );
 
@@ -162,7 +164,7 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
         inset: 0,
         zIndex: 2000,
         display: 'flex',
-        alignItems: 'flex-end',
+        alignItems: 'stretch',
         justifyContent: 'flex-end',
         pointerEvents: 'none',
       }}
@@ -195,13 +197,13 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
         }}
       >
         {/* Header */}
-        <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '16px 20px 0', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#1E3A5F' }}>Customer Universe</div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
                 {totalOutlets.toLocaleString()} mapped outlets
-                {filters.userGroup && <span style={{ marginLeft: 6, color: '#1565C0' }}>· Filtered by {filters.userGroup}</span>}
+                {filters.userGroup && <span style={{ marginLeft: 6, color: '#1565C0' }}>· {filters.userGroup}</span>}
               </div>
             </div>
             <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
@@ -210,22 +212,22 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
           </div>
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, marginTop: 12, borderBottom: '2px solid #F3F4F6' }}>
+          <div style={{ display: 'flex', gap: 0 }}>
             {([['region', 'By Region'], ['tier', 'By Tier']] as const).map(([key, label]) => (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
                 style={{
-                  padding: '6px 16px',
+                  padding: '8px 16px',
                   background: 'transparent',
                   border: 'none',
                   borderBottom: `2px solid ${activeTab === key ? '#1E3A5F' : 'transparent'}`,
-                  marginBottom: -2,
                   color: activeTab === key ? '#1E3A5F' : '#9CA3AF',
                   fontSize: 12,
                   fontWeight: activeTab === key ? 700 : 400,
                   cursor: 'pointer',
                   fontFamily: 'Inter, system-ui, sans-serif',
+                  transition: 'color 0.15s',
                 }}
               >
                 {label}
@@ -235,54 +237,68 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 20px' }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {activeTab === 'region' ? (
-            <>
+            <div style={{ padding: '0 20px 16px' }}>
+              {/* Table header */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 80px 80px 70px',
+                gap: 8,
+                padding: '10px 0 6px',
+                borderBottom: '1px solid rgba(0,0,0,0.08)',
+                position: 'sticky',
+                top: 0,
+                background: '#FFFFFF',
+              }}>
+                {['Region', 'Total', 'Visited', 'Coverage'].map(h => (
+                  <div key={h} style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h !== 'Region' ? 'right' : 'left' }}>
+                    {h}
+                  </div>
+                ))}
+              </div>
+
               {loadingRegions ? (
-                <div style={{ padding: 20 }}>
-                  {[1,2,3,4,5,6].map(i => (
-                    <div key={i} className="skeleton" style={{ height: 48, marginBottom: 8, borderRadius: 6 }} />
+                <div>
+                  {[1,2,3,4,5,6,7].map(i => (
+                    <div key={i} className="skeleton" style={{ height: 52, marginTop: 8, borderRadius: 6 }} />
                   ))}
                 </div>
               ) : (
-                <>
-                  {/* Table header */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 70px 70px', gap: 8, padding: '4px 0 8px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-                    {['Region', 'Total', 'Visited', 'Coverage'].map(h => (
-                      <div key={h} style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h !== 'Region' ? 'right' : 'left' }}>
-                        {h}
+                regionRows.map(row => (
+                  <div key={row.region} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 70px', gap: 8, alignItems: 'center' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3A5F' }}>{row.region}</div>
+                      <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'right' }}>{row.total.toLocaleString()}</div>
+                      <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 600, textAlign: 'right' }}>{row.visited.toLocaleString()}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
+                        {row.coverage.toFixed(1)}%
                       </div>
-                    ))}
+                    </div>
+                    <CoverageBar pct={row.coverage} color={coverageColor(row.coverage)} />
                   </div>
-
-                  {regionRows.map(row => (
-                    <div key={row.region} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 70px 70px 70px', gap: 8, alignItems: 'center' }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F' }}>{row.region}</div>
-                        <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'right' }}>{row.total.toLocaleString()}</div>
-                        <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 500, textAlign: 'right' }}>{row.visited.toLocaleString()}</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
-                          {row.coverage.toFixed(1)}%
-                        </div>
-                      </div>
-                      <div style={{ paddingRight: 0 }}>
-                        <CoverageBar pct={row.coverage} color={coverageColor(row.coverage)} />
-                      </div>
-                    </div>
-                  ))}
-
-                  {regionRows.length === 0 && (
-                    <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
-                      No region data available
-                    </div>
-                  )}
-                </>
+                ))
               )}
-            </>
+
+              {!loadingRegions && regionRows.length === 0 && (
+                <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
+                  No regional data available
+                </div>
+              )}
+            </div>
           ) : (
-            <>
+            <div style={{ padding: '0 20px 16px' }}>
               {/* Table header */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 65px 65px 65px 65px', gap: 6, padding: '4px 0 8px', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 65px 65px 65px 65px',
+                gap: 6,
+                padding: '10px 0 6px',
+                borderBottom: '1px solid rgba(0,0,0,0.08)',
+                position: 'sticky',
+                top: 0,
+                background: '#FFFFFF',
+              }}>
                 {['Tier', 'Total', 'Visited', 'Unvisited', 'Coverage'].map(h => (
                   <div key={h} style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', textAlign: h !== 'Tier' ? 'right' : 'left' }}>
                     {h}
@@ -291,11 +307,7 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
               </div>
 
               {tierRows.map(row => {
-                const tierKey = Object.entries({ 'General Trade': 'GENERAL TRADE', 'Modern Trade': 'MODERN TRADE', Stockist: 'STOCKIST', Distributor: 'DISTRIBUTOR', 'Key Account': 'KEY ACCOUNT', Hub: 'HUB' })[
-                  ['General Trade', 'Modern Trade', 'Stockist', 'Distributor', 'Key Account', 'Hub'].indexOf(row.tier)
-                ]?.[1] || 'GENERAL TRADE';
-                const color = TIER_COLOURS[tierKey] || '#9E9E9E';
-
+                const color = TIER_COLOURS[row.tierKey] || '#9E9E9E';
                 return (
                   <div key={row.tier} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 65px 65px 65px 65px', gap: 6, alignItems: 'center' }}>
@@ -304,9 +316,9 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
                         <span style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F' }}>{row.tier}</span>
                       </div>
                       <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'right' }}>{row.total.toLocaleString()}</div>
-                      <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 500, textAlign: 'right' }}>{row.visited.toLocaleString()}</div>
+                      <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 600, textAlign: 'right' }}>{row.visited.toLocaleString()}</div>
                       <div style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'right' }}>{row.unvisited.toLocaleString()}</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
                         {row.coverage.toFixed(1)}%
                       </div>
                     </div>
@@ -316,12 +328,12 @@ export default function CustomerUniversePanel({ customerCounts, userGroupRegions
                   </div>
                 );
               })}
-            </>
+            </div>
           )}
         </div>
 
         <div style={{ padding: '10px 20px', borderTop: '1px solid rgba(0,0,0,0.08)', fontSize: 10, color: '#9CA3AF', flexShrink: 0 }}>
-          * Region visited counts are aggregated across all field groups. Tier coverage is estimated.
+          Region totals from live DB count queries. Visited counts aggregated from field group data.
         </div>
       </div>
     </div>
