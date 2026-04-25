@@ -183,6 +183,7 @@ export interface AppData {
   userGroupRegions: UserGroupRegion[];
   customerCounts: CustomerCategoryCounts | null;
   routeCount: number | null;
+  shopsVisited: number | null;
   loading: boolean;
 }
 

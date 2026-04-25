@@ -36,23 +36,28 @@ const TIER_DEFS: Array<{ key: string; label: string }> = [
   { key: 'HUB',           label: 'Hub' },
 ];
 
-// Canonical display name for each known region
+// Canonical display name for each known region.
+// IMPORTANT: checks are ordered most-specific first to avoid mismatch.
+// "Nairobi - Local" and similar sub-regions must hit the nairobi check before any rift check.
+// Bare "RIFT" / "RIFT VALLEY" (no north/south qualifier) goes to Other — do NOT assume North Rift.
 function normalizeRegion(raw: string): string {
-  const s = raw.toLowerCase().trim();
-  if (s.includes('nairobi')) return 'Nairobi';
+  const s = (raw || '').toLowerCase().trim();
+  if (!s) return 'Other';
+  if (s.includes('nairobi') || s === 'local' || s === 'nairobi local') return 'Nairobi';
   if (s.includes('north') && s.includes('rift')) return 'North Rift';
   if (s.includes('south') && s.includes('rift')) return 'South Rift';
   if (s.includes('central')) return 'Central';
-  if (s.includes('lake')) return 'Lake';
+  if (s.includes('lake') || s.includes('western')) return 'Lake';
   if (s.includes('coast')) return 'Coast';
   if (s.includes('nyanza')) return 'Nyanza';
-  // "RIFT VALLEY" without north/south → best guess North Rift
-  if (s.includes('rift')) return 'North Rift';
   return 'Other';
 }
 
 // ── Module-level cache: persists while the page is open so re-opening is instant ──
+// Bump CACHE_VER whenever normalizeRegion logic changes to prevent stale normalization.
+const CACHE_VER = 'v3';
 interface UniverseCache {
+  ver?: string;
   customers?: Array<{ id: string; region: string; cat: string }>;
   globalVisited?: Set<string>;
   groupVisited?: Map<string, Set<string>>; // group name → Set<shop_id>
@@ -116,6 +121,14 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
 
     const run = async () => {
       try {
+        // Bust cache if normalization logic was updated
+        if (_cache.ver !== CACHE_VER) {
+          _cache.customers = undefined;
+          _cache.globalVisited = undefined;
+          _cache.groupVisited = undefined;
+          _cache.ver = CACHE_VER;
+        }
+
         // ── Step 1: Fetch all customers (id, region, cat) — cached globally ──
         if (!_cache.customers) {
           setLoadingMsg('Fetching customer registry (79k outlets)…');
@@ -311,6 +324,7 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
               {/* Refresh button to bust cache */}
               <button
                 onClick={() => {
+                  _cache.ver = undefined;
                   _cache.customers = undefined;
                   _cache.globalVisited = undefined;
                   _cache.groupVisited = undefined;

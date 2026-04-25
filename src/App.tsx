@@ -40,7 +40,7 @@ interface DashboardProps {
 }
 
 function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: DashboardProps) {
-  const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, routeCount, loading } = useSupabaseData();
+  const { ttmSummary, userGroups, routeSummary, userGroupRegions, customerCounts, routeCount, shopsVisited, loading } = useSupabaseData();
   const {
     selectedRep, setSelectedRep,
     compareMode, compareRep1, compareRep2, setCompareMode, setCompareRep1, setCompareRep2,
@@ -115,6 +115,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
           userGroupRegions={userGroupRegions}
           ttmSummary={ttmSummary}
           customerCounts={customerCounts}
+          shopsVisited={shopsVisited}
           loading={loading}
         />
       </div>

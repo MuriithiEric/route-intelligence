@@ -32,6 +32,7 @@ export function useSupabaseData(): AppData {
     userGroupRegions: [],
     customerCounts: null,
     routeCount: null,
+    shopsVisited: null,
     loading: true,
   });
 
@@ -102,8 +103,31 @@ export function useSupabaseData(): AppData {
           userGroupRegions: ugrResult,
           customerCounts: countsResult,
           routeCount: routeCountResult,
+          shopsVisited: null,
           loading: false,
         });
+
+        // Background: COUNT(DISTINCT shop_id) from visit_frequency via parallel pagination
+        const distinctShops = await cachedQuery<number>('visit_frequency:distinct_shops', async () => {
+          const PAGE = 1000;
+          const { count } = await supabase.from('visit_frequency').select('shop_id', { count: 'exact', head: true });
+          if (!count) return 0;
+          const pages = Math.ceil(count / PAGE);
+          const allIds: string[] = [];
+          const BATCH = 20;
+          for (let i = 0; i < pages; i += BATCH) {
+            const batch = Array.from({ length: Math.min(BATCH, pages - i) }, (_, j) => {
+              const from = (i + j) * PAGE;
+              return supabase.from('visit_frequency').select('shop_id').range(from, from + PAGE - 1);
+            });
+            const results = await Promise.all(batch);
+            for (const r of results) {
+              if (r.data) allIds.push(...(r.data as { shop_id: string }[]).map(row => row.shop_id));
+            }
+          }
+          return new Set(allIds).size;
+        });
+        setData(prev => ({ ...prev, shopsVisited: distinctShops }));
       } catch (err) {
         console.error('Failed to load mount data:', err);
         setData(prev => ({ ...prev, loading: false }));

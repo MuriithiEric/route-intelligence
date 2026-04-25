@@ -9,6 +9,7 @@ interface StatsBarProps {
   repProfiles?: RepProfile[];
   ttmSummary: TTMSummary[];
   customerCounts: CustomerCategoryCounts | null;
+  shopsVisited: number | null;
   loading: boolean;
 }
 
@@ -55,7 +56,7 @@ interface StatCardData {
   onClick?: () => void;
 }
 
-export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, customerCounts, loading }: StatsBarProps) {
+export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, customerCounts, shopsVisited, loading }: StatsBarProps) {
   const { filters, selectedRep, repStatusFilter, setShowUniversePanel } = useAppContext();
 
   const stats = useMemo(() => {
@@ -101,10 +102,11 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       };
     }
 
-    const totalShops = userGroups.reduce((sum, g) => sum + g.unique_shops, 0);
-    const avgCoverage = userGroups.length > 0
-      ? userGroups.reduce((sum, g) => sum + g.coverage_pct, 0) / userGroups.length
-      : 30.7;
+    const distinctShops = shopsVisited ?? 0;
+    const totalOutlets = customerCounts?.total || 0;
+    const nationalCoverage = totalOutlets > 0 && distinctShops > 0
+      ? (distinctShops / totalOutlets) * 100
+      : 0;
 
     const activeReps = ttmSummary.filter(r => r.rep_status !== 'Inactive').length;
     const inactiveReps = ttmSummary.filter(r => r.rep_status === 'Inactive').length;
@@ -120,11 +122,11 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
     }
 
     return {
-      customerUniverse: customerCounts?.total ?? 0,
-      shopsVisited: totalShops || 26294,
+      customerUniverse: totalOutlets,
+      shopsVisited: distinctShops,
       activeStaff,
       avgVisit: 11.2,
-      nationalCoverage: avgCoverage || 30.7,
+      nationalCoverage,
       coverageLabel: 'NATIONAL COVERAGE',
       coverageTooltip: 'Percentage of mapped outlets visited by at least one field rep',
     };
