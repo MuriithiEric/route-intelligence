@@ -218,7 +218,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
       {showUniversePanel && (
         <CustomerUniversePanel
           customerCounts={customerCounts}
-          userGroupRegions={userGroupRegions}
+          ttmSummary={ttmSummary}
           onClose={() => setShowUniversePanel(false)}
         />
       )}
