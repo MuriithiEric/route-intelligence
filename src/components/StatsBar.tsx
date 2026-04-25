@@ -60,14 +60,25 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
   const { filters, selectedRep, repStatusFilter, setShowUniversePanel } = useAppContext();
 
   const stats = useMemo(() => {
+    const totalOutlets = customerCounts?.total || 0;
+
+    // Weighted average visit duration from ttmSummary — equals AVG(duration) FROM visits
+    const computeWeightedAvg = (reps: typeof ttmSummary) => {
+      const totalV = reps.reduce((s, r) => s + r.total_visits, 0);
+      return totalV > 0 ? reps.reduce((s, r) => s + r.avg_duration * r.total_visits, 0) / totalV : 0;
+    };
+
+    // Coverage: always COUNT(DISTINCT shop_id) / COUNT(customers) × 100
+    const pct = (shops: number) => totalOutlets > 0 ? (shops / totalOutlets) * 100 : 0;
+
     if (selectedRep) {
       const rep = ttmSummary.find(r => r.raw_name === selectedRep);
       return {
-        customerUniverse: customerCounts?.total ?? 0,
+        customerUniverse: totalOutlets,
         shopsVisited: rep?.unique_shops || 0,
         activeStaff: 1,
         avgVisit: rep?.avg_duration || 0,
-        nationalCoverage: rep?.coverage_pct || 0,
+        nationalCoverage: rep ? pct(rep.unique_shops) : 0,
         coverageLabel: 'INDIVIDUAL COVERAGE',
         coverageTooltip: 'Percentage of all mapped outlets this rep has visited',
       };
@@ -77,12 +88,13 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       const regionData = userGroupRegions.find(
         r => r.category === filters.userGroup && r.region === filters.region
       );
+      const groupReps = ttmSummary.filter(r => r.role === filters.userGroup);
       return {
-        customerUniverse: customerCounts?.total ?? 0,
+        customerUniverse: totalOutlets,
         shopsVisited: regionData?.unique_shops || 0,
         activeStaff: regionData?.unique_reps || 0,
-        avgVisit: 11.2,
-        nationalCoverage: regionData?.coverage_pct || 0,
+        avgVisit: computeWeightedAvg(groupReps),
+        nationalCoverage: pct(regionData?.unique_shops || 0),
         coverageLabel: `${filters.userGroup} COVERAGE`,
         coverageTooltip: `Percentage of mapped outlets visited by ${filters.userGroup} in ${filters.region}`,
       };
@@ -90,47 +102,57 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
 
     if (filters.userGroup) {
       const group = userGroups.find(g => g.category === filters.userGroup);
-      const groupStaff = ttmSummary.filter(r => r.role === filters.userGroup).length;
+      const groupReps = ttmSummary.filter(r => r.role === filters.userGroup);
+      const groupActiveReps = group?.active_rep_count || 0;
+      const groupTotalReps = group?.active_users || 0;
+      const groupInactiveReps = group?.inactive_rep_count || 0;
+      let groupActiveStaff: number | string;
+      if (repStatusFilter === 'active') {
+        groupActiveStaff = groupActiveReps;
+      } else if (repStatusFilter === 'inactive') {
+        groupActiveStaff = groupInactiveReps;
+      } else {
+        groupActiveStaff = groupTotalReps > 0 ? `${groupActiveReps} Active / ${groupTotalReps} Total` : groupActiveReps;
+      }
       return {
-        customerUniverse: customerCounts?.total ?? 0,
+        customerUniverse: totalOutlets,
         shopsVisited: group?.unique_shops || 0,
-        activeStaff: groupStaff,
-        avgVisit: 11.2,
-        nationalCoverage: group?.coverage_pct || 0,
+        activeStaff: groupActiveStaff,
+        avgVisit: computeWeightedAvg(groupReps),
+        nationalCoverage: pct(group?.unique_shops || 0),
         coverageLabel: 'GROUP COVERAGE',
         coverageTooltip: `Percentage of mapped outlets visited by ${filters.userGroup}`,
       };
     }
 
+    // National — COUNT(DISTINCT shop_id) / COUNT(customers) × 100
     const distinctShops = shopsVisited ?? 0;
-    const totalOutlets = customerCounts?.total || 0;
-    const nationalCoverage = totalOutlets > 0 && distinctShops > 0
-      ? (distinctShops / totalOutlets) * 100
-      : 0;
+    const nationalCoverage = pct(distinctShops);
 
-    const activeReps = ttmSummary.filter(r => r.rep_status !== 'Inactive').length;
-    const inactiveReps = ttmSummary.filter(r => r.rep_status === 'Inactive').length;
-    const totalReps = ttmSummary.length;
+    // Active staff: SUM(active_rep_count), SUM(active_users) FROM user_groups
+    const totalActiveReps = userGroups.reduce((s, g) => s + (g.active_rep_count || 0), 0);
+    const totalInactiveReps = userGroups.reduce((s, g) => s + (g.inactive_rep_count || 0), 0);
+    const totalAllReps = userGroups.reduce((s, g) => s + (g.active_users || 0), 0);
 
     let activeStaff: number | string;
     if (repStatusFilter === 'active') {
-      activeStaff = activeReps;
+      activeStaff = totalActiveReps;
     } else if (repStatusFilter === 'inactive') {
-      activeStaff = inactiveReps;
+      activeStaff = totalInactiveReps;
     } else {
-      activeStaff = `${activeReps} Active / ${totalReps} Total`;
+      activeStaff = `${totalActiveReps} Active / ${totalAllReps} Total`;
     }
 
     return {
       customerUniverse: totalOutlets,
       shopsVisited: distinctShops,
       activeStaff,
-      avgVisit: 11.2,
+      avgVisit: computeWeightedAvg(ttmSummary),
       nationalCoverage,
       coverageLabel: 'NATIONAL COVERAGE',
       coverageTooltip: 'Percentage of mapped outlets visited by at least one field rep',
     };
-  }, [filters, selectedRep, userGroups, userGroupRegions, ttmSummary, repStatusFilter, customerCounts]);
+  }, [filters, selectedRep, userGroups, userGroupRegions, ttmSummary, repStatusFilter, customerCounts, shopsVisited]);
 
   const coverageColor = stats.nationalCoverage < 10
     ? '#C0392B'

@@ -338,7 +338,7 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
               <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{repData.field_days}</span> field days
             </span>
             <span style={{ fontSize: 10, color: '#6B7280' }}>
-              <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{repData.avg_duration?.toFixed(0)}</span> min avg visit
+              <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{repData.avg_duration?.toFixed(1)}</span> min avg visit
             </span>
             <span style={{ fontSize: 10, color: '#6B7280' }}>
               <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{repData.unique_routes}</span> routes

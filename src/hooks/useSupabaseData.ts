@@ -81,9 +81,8 @@ export function useSupabaseData(): AppData {
               'KEY ACCOUNT':    ka.count   ?? 0,
               HUB:              hub.count  ?? 0,
               STOCKIST:         st.count   ?? 0,
-              // Fallback to known counts until exact cat values are confirmed
-              'MODERN TRADE':   mt.count   || 7044,
-              'GENERAL TRADE':  gt.count   || 68383,
+              'MODERN TRADE':   mt.count   ?? 0,
+              'GENERAL TRADE':  gt.count   ?? 0,
               total:            all.count  ?? 0,
             };
           }),
