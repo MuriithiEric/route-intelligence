@@ -274,39 +274,77 @@ export default function LeaderboardPanel({
           </div>
         </div>
 
-        {/* Compare mode hint */}
-        {compareMode && (
-          <div style={{
-            padding: '4px 8px',
-            background: '#EFF6FF',
-            borderRadius: 6,
-            fontSize: 10,
-            color: '#1565C0',
-            marginBottom: 6,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}>
-            <span style={{
-              width: 16, height: 16, borderRadius: 4,
-              background: compareRep1 ? '#C9963E' : 'rgba(0,0,0,0.1)',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 9, fontWeight: 700, color: compareRep1 ? '#FFF' : '#9CA3AF',
-            }}>1</span>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {compareRep1 ? ttmSummary.find(r => r.raw_name === compareRep1)?.name : 'Click a rep to select #1'}
-            </span>
-            <span style={{
-              width: 16, height: 16, borderRadius: 4,
-              background: compareRep2 ? '#1565C0' : 'rgba(0,0,0,0.1)',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 9, fontWeight: 700, color: compareRep2 ? '#FFF' : '#9CA3AF',
-            }}>2</span>
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {compareRep2 ? ttmSummary.find(r => r.raw_name === compareRep2)?.name : 'Click a rep to select #2'}
-            </span>
-          </div>
-        )}
+        {/* Compare mode: two-step wizard */}
+        {compareMode && (() => {
+          const step = !compareRep1 ? 1 : !compareRep2 ? 2 : 3;
+          const rep1Name = compareRep1 ? ttmSummary.find(r => r.raw_name === compareRep1)?.name : null;
+          const rep2Name = compareRep2 ? ttmSummary.find(r => r.raw_name === compareRep2)?.name : null;
+          return (
+            <div style={{ marginBottom: 6 }}>
+              {/* Step indicator row */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                marginBottom: 5, paddingLeft: 2,
+              }}>
+                {[1, 2].map(n => (
+                  <React.Fragment key={n}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: '50%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 9, fontWeight: 700,
+                      background: step > n ? '#16A34A' : step === n ? (n === 1 ? '#C9963E' : '#1565C0') : '#E5E7EB',
+                      color: step >= n ? '#FFF' : '#9CA3AF',
+                      flexShrink: 0,
+                      transition: 'background 0.2s',
+                    }}>
+                      {step > n ? '✓' : n}
+                    </div>
+                    {n === 1 && (
+                      <div style={{
+                        flex: 1, height: 2, borderRadius: 1,
+                        background: step > 1 ? '#16A34A' : '#E5E7EB',
+                        transition: 'background 0.2s',
+                      }} />
+                    )}
+                  </React.Fragment>
+                ))}
+                <span style={{ fontSize: 9, color: '#6B7280', marginLeft: 4, fontWeight: 500 }}>
+                  {step === 1 ? 'Select Rep 1' : step === 2 ? 'Now select Rep 2' : 'Both selected — comparison open'}
+                </span>
+              </div>
+
+              {/* Slot pills */}
+              <div style={{ display: 'flex', gap: 5 }}>
+                {/* Slot 1 */}
+                <div style={{
+                  flex: 1, padding: '5px 8px', borderRadius: 6,
+                  border: `1.5px solid ${compareRep1 ? '#C9963E' : step === 1 ? '#C9963E' : 'rgba(0,0,0,0.08)'}`,
+                  background: compareRep1 ? '#FFFBF0' : step === 1 ? '#FFFBF0' : '#F9FAFB',
+                  opacity: step > 1 || compareRep1 ? 1 : 1,
+                }}>
+                  <div style={{ fontSize: 8, fontWeight: 700, color: '#C9963E', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 }}>Rep 1</div>
+                  <div style={{ fontSize: 10, fontWeight: compareRep1 ? 600 : 400, color: compareRep1 ? '#1E3A5F' : '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rep1Name || (step === 1 ? '← tap a rep' : '—')}
+                  </div>
+                </div>
+
+                {/* Slot 2 */}
+                <div style={{
+                  flex: 1, padding: '5px 8px', borderRadius: 6,
+                  border: `1.5px solid ${compareRep2 ? '#1565C0' : step === 2 ? '#1565C0' : 'rgba(0,0,0,0.08)'}`,
+                  background: compareRep2 ? '#EFF6FF' : step === 2 ? '#EFF6FF' : '#F9FAFB',
+                  opacity: step < 2 && !compareRep2 ? 0.5 : 1,
+                  transition: 'opacity 0.2s',
+                }}>
+                  <div style={{ fontSize: 8, fontWeight: 700, color: '#1565C0', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 1 }}>Rep 2</div>
+                  <div style={{ fontSize: 10, fontWeight: compareRep2 ? 600 : 400, color: compareRep2 ? '#1E3A5F' : '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {rep2Name || (step === 2 ? '← tap a rep' : '—')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Status filter toggle */}
         <div style={{ display: 'flex', gap: 4 }}>

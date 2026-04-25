@@ -84,7 +84,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
     return () => window.removeEventListener('keydown', handler);
   }, [selectedRep, compareMode, showUniversePanel, setSelectedRep, setCompareMode, setCompareRep1, setCompareRep2, setShowUniversePanel]);
 
-  const showComparePanel = compareMode && (compareRep1 || compareRep2);
+  const showComparePanel = compareMode && !!(compareRep1 && compareRep2);
 
   return (
     <div
