@@ -54,11 +54,11 @@ function normalizeRegion(raw: string): string {
 }
 
 // ── Module-level cache: persists while the page is open so re-opening is instant ──
-// Bump CACHE_VER whenever normalizeRegion logic changes to prevent stale normalization.
-const CACHE_VER = 'v3';
+// Bump CACHE_VER whenever normalization logic or fetched columns change.
+const CACHE_VER = 'v4';
 interface UniverseCache {
   ver?: string;
-  customers?: Array<{ id: string; region: string; cat: string }>;
+  customers?: Array<{ id: string; region: string; tier: string }>;
   globalVisited?: Set<string>;
   groupVisited?: Map<string, Set<string>>; // group name → Set<shop_id>
 }
@@ -129,11 +129,12 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           _cache.ver = CACHE_VER;
         }
 
-        // ── Step 1: Fetch all customers (id, region, cat) — cached globally ──
+        // ── Step 1: Fetch all customers (id, region, tier) — cached globally ──
+        // Uses `tier` column per spec: SELECT c.tier, COUNT(DISTINCT c.id) FROM customers c GROUP BY c.tier
         if (!_cache.customers) {
           setLoadingMsg('Fetching customer registry (79k outlets)…');
-          const rows = await fetchAllColumn<{ id: string; region: string; cat: string }>(
-            'customers', 'id,region,cat'
+          const rows = await fetchAllColumn<{ id: string; region: string; tier: string }>(
+            'customers', 'id,region,tier'
           );
           _cache.customers = rows;
         }
@@ -188,9 +189,9 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
         const totalByTier: Record<string, number> = {};
         const visitedByTier: Record<string, number> = {};
 
-        for (const { id, region, cat } of customers) {
+        for (const { id, region, tier } of customers) {
           const normRegion = normalizeRegion(region || '');
-          const normTier = (cat || '').toUpperCase();
+          const normTier = (tier || '').toUpperCase();
 
           // Region counts
           totalByRegion[normRegion] = (totalByRegion[normRegion] || 0) + 1;
