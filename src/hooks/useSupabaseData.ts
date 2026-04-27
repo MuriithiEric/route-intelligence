@@ -76,14 +76,22 @@ export function useSupabaseData(): AppData {
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'GENERAL TRADE'),
               supabase.from('customers').select('*', { count: 'exact', head: true }),
             ]);
+            // GENERAL TRADE customers have cat = null in the DB, so .eq('cat','GENERAL TRADE')
+            // returns 0. Derive GT count as total − all explicitly-categorised customers.
+            const distN = dist.count ?? 0;
+            const kaN   = ka.count   ?? 0;
+            const hubN  = hub.count  ?? 0;
+            const stN   = st.count   ?? 0;
+            const mtN   = mt.count   ?? 0;
+            const totalN = all.count ?? 0;
             return {
-              DISTRIBUTOR:      dist.count ?? 0,
-              'KEY ACCOUNT':    ka.count   ?? 0,
-              HUB:              hub.count  ?? 0,
-              STOCKIST:         st.count   ?? 0,
-              'MODERN TRADE':   mt.count   ?? 0,
-              'GENERAL TRADE':  gt.count   ?? 0,
-              total:            all.count  ?? 0,
+              DISTRIBUTOR:      distN,
+              'KEY ACCOUNT':    kaN,
+              HUB:              hubN,
+              STOCKIST:         stN,
+              'MODERN TRADE':   mtN,
+              'GENERAL TRADE':  totalN - distN - kaN - hubN - stN - mtN,
+              total:            totalN,
             };
           }),
           cachedQuery<number | null>('route_summary:count', async () => {
