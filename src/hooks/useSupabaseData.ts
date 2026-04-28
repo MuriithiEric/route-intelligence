@@ -66,32 +66,33 @@ export function useSupabaseData(): AppData {
             return data || [];
           }),
           // COUNT(*) per category via the `cat` column — same field used by map filtering
-          cachedQuery<CustomerCategoryCounts>('customers:cat_counts', async () => {
-            const [dist, ka, hub, st, mt, gt, all] = await Promise.all([
+          cachedQuery<CustomerCategoryCounts>('customers:cat_counts_v2', async () => {
+            const [dist, ka, hub, st, mt, distFeeds, all] = await Promise.all([
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'DISTRIBUTOR'),
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'KEY ACCOUNT'),
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'HUB'),
               supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'STOCKIST'),
-              supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'MODERN TRADE'),
-              supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'GENERAL TRADE'),
+              // Modern Trade = SUPERMARKET in the DB (cat='SUPERMARKET')
+              supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'SUPERMARKET'),
+              supabase.from('customers').select('*', { count: 'exact', head: true }).eq('cat', 'DISTRIBUTOR - FEEDS'),
               supabase.from('customers').select('*', { count: 'exact', head: true }),
             ]);
-            // GENERAL TRADE customers have cat = null in the DB, so .eq('cat','GENERAL TRADE')
-            // returns 0. Derive GT count as total − all explicitly-categorised customers.
-            const distN = dist.count ?? 0;
-            const kaN   = ka.count   ?? 0;
-            const hubN  = hub.count  ?? 0;
-            const stN   = st.count   ?? 0;
-            const mtN   = mt.count   ?? 0;
-            const totalN = all.count ?? 0;
+            const distN      = dist.count      ?? 0;
+            const kaN        = ka.count        ?? 0;
+            const hubN       = hub.count       ?? 0;
+            const stN        = st.count        ?? 0;
+            const mtN        = mt.count        ?? 0;
+            const distFeedsN = distFeeds.count ?? 0;
+            const totalN     = all.count       ?? 0;
             return {
-              DISTRIBUTOR:      distN,
-              'KEY ACCOUNT':    kaN,
-              HUB:              hubN,
-              STOCKIST:         stN,
-              'MODERN TRADE':   mtN,
-              'GENERAL TRADE':  totalN - distN - kaN - hubN - stN - mtN,
-              total:            totalN,
+              DISTRIBUTOR:       distN,
+              'KEY ACCOUNT':     kaN,
+              HUB:               hubN,
+              STOCKIST:          stN,
+              'MODERN TRADE':    mtN,
+              'GENERAL TRADE':   totalN - distN - kaN - hubN - stN - mtN - distFeedsN,
+              'DISTRIBUTOR - FEEDS': distFeedsN,
+              total:             totalN,
             };
           }),
           cachedQuery<number | null>('route_summary:count', async () => {
@@ -114,10 +115,10 @@ export function useSupabaseData(): AppData {
           loading: false,
         });
 
-        // Background: COUNT(DISTINCT shop_id) from visit_frequency via parallel pagination
-        const distinctShops = await cachedQuery<number>('visit_frequency:distinct_shops', async () => {
+        // Background: COUNT(DISTINCT shop_id) FROM visits — exact match for Fix 1A
+        const distinctShops = await cachedQuery<number>('visits:distinct_shop_ids_v2', async () => {
           const PAGE = 1000;
-          const { count } = await supabase.from('visit_frequency').select('shop_id', { count: 'exact', head: true });
+          const { count } = await supabase.from('visits').select('shop_id', { count: 'exact', head: true });
           if (!count) return 0;
           const pages = Math.ceil(count / PAGE);
           const allIds: string[] = [];
@@ -125,7 +126,7 @@ export function useSupabaseData(): AppData {
           for (let i = 0; i < pages; i += BATCH) {
             const batch = Array.from({ length: Math.min(BATCH, pages - i) }, (_, j) => {
               const from = (i + j) * PAGE;
-              return supabase.from('visit_frequency').select('shop_id').range(from, from + PAGE - 1);
+              return supabase.from('visits').select('shop_id').range(from, from + PAGE - 1);
             });
             const results = await Promise.all(batch);
             for (const r of results) {

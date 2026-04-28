@@ -591,6 +591,44 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         </div>
       )}
 
+      {/* Map Legend — bottom-left above the layers panel */}
+      {layers.customerUniverse && (
+        <div style={{
+          position: 'absolute',
+          bottom: 96,
+          left: 12,
+          zIndex: 1000,
+          background: 'rgba(255,255,255,0.96)',
+          borderRadius: 8,
+          padding: '8px 10px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.14)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          fontFamily: 'Inter, system-ui, sans-serif',
+          pointerEvents: 'none',
+          minWidth: 130,
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
+            Map Legend
+          </div>
+          {[
+            { label: 'Distributor',   color: '#C0392B' },
+            { label: 'Key Account',   color: '#7E57C2' },
+            { label: 'Hub',           color: '#C9963E' },
+            { label: 'Stockist',      color: '#E07B39' },
+            { label: 'Modern Trade',  color: '#0E8C7A' },
+            { label: 'General Trade', color: '#F97316' },
+          ].map(({ label, color }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+              <span style={{
+                width: 10, height: 10, borderRadius: '50%',
+                background: color, display: 'inline-block', flexShrink: 0,
+              }} />
+              <span style={{ fontSize: 10, color: '#374151' }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <LeafletMap
         center={CENTER}
         zoom={7}
@@ -605,7 +643,6 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
 
         <MapEventListener onZoomChange={setZoom} />
         <MapFlyController ttmSummary={ttmSummary} />
-
 
         {layers.fieldStaff && (
           <FieldStaffLayer

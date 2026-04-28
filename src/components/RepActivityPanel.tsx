@@ -316,7 +316,13 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
           {[
             { label: 'Visits', value: repData?.total_visits?.toLocaleString() ?? '—', tooltip: 'Total visits recorded' },
             { label: 'Shops', value: repData?.unique_shops?.toLocaleString() ?? '—', tooltip: 'Unique shops visited' },
-            { label: 'Coverage', value: repData?.coverage_pct != null ? `${repData.coverage_pct.toFixed(2)}%` : '—', tooltip: `Percentage of all mapped outlets this rep has visited` },
+            {
+              label: 'Coverage',
+              value: repData?.unique_shops != null
+                ? `${((repData.unique_shops / 86148) * 100).toFixed(2)}%`
+                : '—',
+              tooltip: `${repData?.unique_shops?.toLocaleString() ?? '—'} of 86,148 active outlets visited`,
+            },
             { label: 'V/Day', value: repData?.visits_per_day != null ? repData.visits_per_day.toFixed(1) : '—', tooltip: 'Average visits per field day' },
           ].map(stat => (
             <div key={stat.label} title={stat.tooltip} style={{

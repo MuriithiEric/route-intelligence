@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, RefreshCw } from 'lucide-react';
+import { X, RefreshCw, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { CustomerCategoryCounts, TTMSummary } from '../types';
 import { TIER_COLOURS } from '../types';
 import { useAppContext } from '../context/AppContext';
+
+// Total active outlets for coverage denominator — Fix 1B
+const TOTAL_ACTIVE_OUTLETS = 86148;
 
 interface CustomerUniversePanelProps {
   customerCounts: CustomerCategoryCounts | null;
@@ -27,19 +30,23 @@ interface TierRow {
   coverage: number;
 }
 
+interface DistributorRegionRow {
+  region: string;
+  total: number;
+  visited: number;
+  unvisited: number;
+}
+
 const TIER_DEFS: Array<{ key: string; label: string }> = [
   { key: 'GENERAL TRADE', label: 'General Trade' },
   { key: 'MODERN TRADE',  label: 'Modern Trade' },
   { key: 'STOCKIST',      label: 'Stockist' },
-  { key: 'DISTRIBUTOR',   label: 'Distributor' },
+  { key: 'DISTRIBUTOR',   label: 'BIDCO Distributor' },
   { key: 'KEY ACCOUNT',   label: 'Key Account' },
   { key: 'HUB',           label: 'Hub' },
 ];
 
 // Canonical display name for each known region.
-// IMPORTANT: checks are ordered most-specific first to avoid mismatch.
-// "Nairobi - Local" and similar sub-regions must hit the nairobi check before any rift check.
-// Bare "RIFT" / "RIFT VALLEY" (no north/south qualifier) goes to Other — do NOT assume North Rift.
 function normalizeRegion(raw: string): string {
   const s = (raw || '').toLowerCase().trim();
   if (!s) return 'Other';
@@ -53,18 +60,37 @@ function normalizeRegion(raw: string): string {
   return 'Other';
 }
 
-// ── Module-level cache: persists while the page is open so re-opening is instant ──
-// Bump CACHE_VER whenever normalization logic or fetched columns change.
-const CACHE_VER = 'v6';
+// Normalize tier using cat field (canonical).
+// Fix 1E: cat='DISTRIBUTOR' → BIDCO Distributor; cat='DISTRIBUTOR - FEEDS' → merged with General Trade
+// cat='SUPERMARKET' → 'MODERN TRADE'
+function normalizeTier(cat: string, tier: string): string {
+  const catUpper = (cat || '').trim().toUpperCase();
+  if (catUpper === 'DISTRIBUTOR') return 'DISTRIBUTOR';
+  if (catUpper === 'DISTRIBUTOR - FEEDS') return 'GENERAL TRADE'; // not a BIDCO distributor
+  if (catUpper === 'KEY ACCOUNT') return 'KEY ACCOUNT';
+  if (catUpper === 'HUB') return 'HUB';
+  if (catUpper === 'STOCKIST') return 'STOCKIST';
+  if (catUpper === 'SUPERMARKET' || catUpper === 'MODERN TRADE') return 'MODERN TRADE';
+  if (catUpper === 'GENERAL TRADE') return 'GENERAL TRADE';
+  // Fall back to tier column if cat is empty/unknown
+  const tierUpper = (tier || '').trim().toUpperCase();
+  if (tierUpper === 'KEY ACCOUNT') return 'KEY ACCOUNT';
+  if (tierUpper === 'HUB') return 'HUB';
+  if (tierUpper === 'STOCKIST') return 'STOCKIST';
+  if (tierUpper === 'MODERN TRADE') return 'MODERN TRADE';
+  // Do NOT map tier='DISTRIBUTOR' here — would include DISTRIBUTOR-FEEDS incorrectly
+  return 'GENERAL TRADE';
+}
+
+const CACHE_VER = 'v9';
 interface UniverseCache {
   ver?: string;
   customers?: Array<{ id: string; region: string; cat: string; tier: string }>;
   globalVisited?: Set<string>;
-  groupVisited?: Map<string, Set<string>>; // group name → Set<shop_id>
+  groupVisited?: Map<string, Set<string>>;
 }
 const _cache: UniverseCache = {};
 
-// Fetch all rows from a table column in parallel batches of `concurrency` pages.
 async function fetchAllColumn<T>(
   table: string,
   column: string,
@@ -72,8 +98,6 @@ async function fetchAllColumn<T>(
   concurrency = 20
 ): Promise<T[]> {
   const PAGE = 1000;
-
-  // Get total count first (HEAD request — returns no rows, just count)
   let countQuery = supabase.from(table).select(column, { count: 'exact', head: true });
   if (filter) countQuery = (countQuery as any).in(filter.field, filter.values);
   const { count } = await countQuery;
@@ -94,7 +118,6 @@ async function fetchAllColumn<T>(
       if (r.data) all.push(...(r.data as T[]));
     }
   }
-
   return all;
 }
 
@@ -103,10 +126,12 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
   const [activeTab, setActiveTab] = useState<'region' | 'tier'>('region');
   const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
   const [tierRows, setTierRows] = useState<TierRow[]>([]);
+  const [distRows, setDistRows] = useState<DistributorRegionRow[]>([]);
+  const [distSummary, setDistSummary] = useState<{ total: number; visited: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState('Loading customer data…');
+  const [showDistDetail, setShowDistDetail] = useState(false);
 
-  // Rep raw_names for the selected group (for group-filtered visited counts)
   const groupRepNames = useMemo(() =>
     filters.userGroup
       ? ttmSummary.filter(r => r.role === filters.userGroup).map(r => r.raw_name)
@@ -121,7 +146,6 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
 
     const run = async () => {
       try {
-        // Bust cache if normalization logic was updated
         if (_cache.ver !== CACHE_VER) {
           _cache.customers = undefined;
           _cache.globalVisited = undefined;
@@ -129,11 +153,8 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           _cache.ver = CACHE_VER;
         }
 
-        // ── Step 1: Fetch all customers (id, region, cat, tier) — cached globally ──
-        // Some tiers (Modern Trade) may be stored in `tier`, others in `cat`.
-        // Null/empty → 'GENERAL TRADE' (matches MapContainer's fallback logic).
         if (!_cache.customers) {
-          setLoadingMsg('Fetching customer registry (79k outlets)…');
+          setLoadingMsg('Fetching customer registry…');
           const rows = await fetchAllColumn<{ id: string; region: string; cat: string; tier: string }>(
             'customers', 'id,region,cat,tier'
           );
@@ -142,23 +163,15 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
         const customers = _cache.customers!;
         if (cancelled) return;
 
-        // ── Step 2: Fetch visited shop_ids from visit_frequency ──
-        // The correct query: SELECT DISTINCT shop_id FROM visit_frequency [WHERE rep_name IN group]
-        // This gives us exactly the set of customer IDs that map to "visited" in the JOIN:
-        //   SELECT c.region, COUNT(DISTINCT c.id) as visited
-        //   FROM customers c
-        //   INNER JOIN (SELECT DISTINCT shop_id FROM visits) v ON c.id = v.shop_id
-        //   GROUP BY c.region
-
+        // Fix: visitedSet derived from visits table — matches COUNT(DISTINCT shop_id) FROM visits
         let visitedSet: Set<string>;
 
         if (groupRepNames) {
-          // Group-filtered: only count shops visited by this group's reps
           const cacheKey = filters.userGroup!;
           if (!_cache.groupVisited?.has(cacheKey)) {
             setLoadingMsg(`Fetching visits for ${filters.userGroup}…`);
             const rows = await fetchAllColumn<{ shop_id: string }>(
-              'visit_frequency', 'shop_id',
+              'visits', 'shop_id',
               { field: 'rep_name', values: groupRepNames }
             );
             if (!_cache.groupVisited) _cache.groupVisited = new Map();
@@ -166,12 +179,9 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           }
           visitedSet = _cache.groupVisited!.get(filters.userGroup!)!;
         } else {
-          // Global (no group filter): count shops visited by ANY rep
           if (!_cache.globalVisited) {
             setLoadingMsg('Counting visited outlets nationally…');
-            const rows = await fetchAllColumn<{ shop_id: string }>(
-              'visit_frequency', 'shop_id'
-            );
+            const rows = await fetchAllColumn<{ shop_id: string }>('visits', 'shop_id');
             _cache.globalVisited = new Set(rows.map(r => r.shop_id));
           }
           visitedSet = _cache.globalVisited!;
@@ -179,21 +189,19 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
 
         if (cancelled) return;
 
-        // ── Step 3: JOIN in JS — exactly equivalent to the SQL JOIN ──
-        // SELECT c.region, COUNT(DISTINCT c.id) as visited
-        // FROM customers c
-        // INNER JOIN (SELECT DISTINCT shop_id FROM visit_frequency) v ON c.id = v.shop_id
-        // GROUP BY c.region
-
         const totalByRegion: Record<string, number> = {};
         const visitedByRegion: Record<string, number> = {};
         const totalByTier: Record<string, number> = {};
         const visitedByTier: Record<string, number> = {};
 
+        // Distributor intelligence (cat='DISTRIBUTOR' only — BIDCO distributors)
+        const distByRegion: Record<string, { total: number; visited: number }> = {};
+        let distTotal = 0;
+        let distVisited = 0;
+
         for (const { id, region, cat, tier } of customers) {
           const normRegion = normalizeRegion(region || '');
-          // Use tier first (may store 'MODERN TRADE' etc.), fall back to cat, then GENERAL TRADE
-          const normTier = ((tier && tier.trim()) || (cat && cat.trim()) || 'GENERAL TRADE').toUpperCase();
+          const normTier = normalizeTier(cat, tier);
 
           // Region counts
           totalByRegion[normRegion] = (totalByRegion[normRegion] || 0) + 1;
@@ -202,15 +210,25 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           }
 
           // Tier counts
-          if (normTier) {
-            totalByTier[normTier] = (totalByTier[normTier] || 0) + 1;
+          totalByTier[normTier] = (totalByTier[normTier] || 0) + 1;
+          if (visitedSet.has(id)) {
+            visitedByTier[normTier] = (visitedByTier[normTier] || 0) + 1;
+          }
+
+          // BIDCO distributor intelligence (cat='DISTRIBUTOR' only)
+          const catUpper = (cat || '').trim().toUpperCase();
+          if (catUpper === 'DISTRIBUTOR') {
+            distTotal += 1;
+            const r = normRegion;
+            if (!distByRegion[r]) distByRegion[r] = { total: 0, visited: 0 };
+            distByRegion[r].total += 1;
             if (visitedSet.has(id)) {
-              visitedByTier[normTier] = (visitedByTier[normTier] || 0) + 1;
+              distVisited += 1;
+              distByRegion[r].visited += 1;
             }
           }
         }
 
-        // Build region rows (exclude "Other" unless significant)
         const regionResult: RegionRow[] = Object.entries(totalByRegion)
           .filter(([r, t]) => r !== 'Other' || t > 500)
           .map(([region, total]) => {
@@ -219,7 +237,6 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           })
           .sort((a, b) => b.total - a.total);
 
-        // Build tier rows
         const tierResult: TierRow[] = TIER_DEFS
           .map(({ key, label }) => {
             const total = totalByTier[key] || 0;
@@ -235,9 +252,15 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
           })
           .filter(r => r.total > 0);
 
+        const distRegionRows: DistributorRegionRow[] = Object.entries(distByRegion)
+          .map(([region, d]) => ({ region, total: d.total, visited: d.visited, unvisited: d.total - d.visited }))
+          .sort((a, b) => b.unvisited - a.unvisited);
+
         if (!cancelled) {
           setRegionRows(regionResult);
           setTierRows(tierResult);
+          setDistRows(distRegionRows);
+          setDistSummary({ total: distTotal, visited: distVisited });
           setLoading(false);
         }
       } catch (err) {
@@ -312,19 +335,13 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: '#1E3A5F' }}>Customer Universe</div>
               <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-                {totalOutlets.toLocaleString()} mapped outlets
+                {totalOutlets.toLocaleString()} outlets with GPS
                 {filters.userGroup
                   ? <span style={{ marginLeft: 6, color: '#1565C0', fontWeight: 500 }}>· Filtered: {filters.userGroup}</span>
-                  : <span style={{ marginLeft: 6, color: '#9CA3AF' }}>· National view</span>}
+                  : <span style={{ marginLeft: 6, color: '#9CA3AF' }}>· {TOTAL_ACTIVE_OUTLETS.toLocaleString()} total active (inc. no GPS)</span>}
               </div>
-              {!loading && (
-                <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 2 }}>
-                  Visited = COUNT(DISTINCT customer) with at least 1 visit
-                </div>
-              )}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              {/* Refresh button to bust cache */}
               <button
                 onClick={() => {
                   _cache.ver = undefined;
@@ -383,7 +400,6 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
             </div>
           ) : activeTab === 'region' ? (
             <div style={{ padding: '0 20px 16px' }}>
-              {/* Column headers */}
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 80px 80px 75px',
@@ -430,7 +446,106 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
             </div>
           ) : (
             <div style={{ padding: '0 20px 16px' }}>
-              {/* Column headers */}
+
+              {/* BIDCO Distributor Intelligence Card */}
+              {distSummary && (
+                <div style={{
+                  margin: '12px 0',
+                  borderRadius: 8,
+                  border: '1.5px solid #C0392B',
+                  background: '#FFF5F5',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    padding: '8px 12px',
+                    background: '#C0392B',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#FFFFFF', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                      BIDCO Distributors
+                    </span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)' }}>
+                      {distSummary.total} total across Kenya
+                    </span>
+                  </div>
+                  <div style={{ padding: '10px 12px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div style={{ background: '#DCFCE7', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#166534' }}>
+                          {distSummary.visited.toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#16A34A', fontWeight: 600 }}>
+                          visited ({distSummary.total > 0 ? ((distSummary.visited / distSummary.total) * 100).toFixed(0) : 0}%)
+                        </div>
+                      </div>
+                      <div style={{ background: '#FEE2E2', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: '#991B1B' }}>
+                          {(distSummary.total - distSummary.visited).toLocaleString()}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#C0392B', fontWeight: 600 }}>
+                          never visited ({distSummary.total > 0 ? (((distSummary.total - distSummary.visited) / distSummary.total) * 100).toFixed(0) : 0}%)
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ height: 6, background: '#F3F4F6', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${distSummary.total > 0 ? (distSummary.visited / distSummary.total) * 100 : 0}%`,
+                        background: '#22C55E',
+                        borderRadius: 3,
+                        transition: 'width 0.6s ease-out',
+                      }} />
+                    </div>
+                    <button
+                      onClick={() => setShowDistDetail(v => !v)}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        fontSize: 11,
+                        color: '#C0392B',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'Inter, system-ui, sans-serif',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 4,
+                        padding: '4px 0 0',
+                      }}
+                    >
+                      {showDistDetail ? 'Hide' : 'Show'} breakdown by region
+                      <span style={{ fontSize: 10 }}>{showDistDetail ? '▲' : '▼'}</span>
+                    </button>
+                    {showDistDetail && distRows.length > 0 && (
+                      <div style={{ marginTop: 8, borderTop: '1px solid rgba(192,57,43,0.2)', paddingTop: 8 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 50px 50px 60px', gap: 6, marginBottom: 4 }}>
+                          {['Region', 'Total', 'Visited', 'Missing'].map(h => (
+                            <div key={h} style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: h === 'Region' ? 'left' : 'right' }}>
+                              {h}
+                            </div>
+                          ))}
+                        </div>
+                        {distRows.map(row => (
+                          <div key={row.region} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 50px 60px', gap: 6, padding: '3px 0', borderBottom: '1px solid rgba(0,0,0,0.04)', alignItems: 'center' }}>
+                            <div style={{ fontSize: 11, color: '#1E3A5F', fontWeight: 500 }}>{row.region}</div>
+                            <div style={{ fontSize: 11, color: '#6B7280', textAlign: 'right' }}>{row.total}</div>
+                            <div style={{ fontSize: 11, color: '#16A34A', fontWeight: 600, textAlign: 'right' }}>{row.visited}</div>
+                            <div style={{ fontSize: 11, color: '#C0392B', fontWeight: 600, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                              {row.unvisited > 0 && <AlertTriangle size={10} />}
+                              {row.unvisited}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tier table */}
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 65px 65px 65px 68px',
@@ -486,8 +601,8 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
         </div>
 
         <div style={{ padding: '8px 20px', borderTop: '1px solid rgba(0,0,0,0.08)', fontSize: 10, color: '#9CA3AF', flexShrink: 0 }}>
-          Visited = COUNT(DISTINCT customer_id) via JOIN with visit_frequency.
-          {loading ? '' : ' Data cached — click ↺ to refresh.'}
+          Coverage = COUNT(DISTINCT shop_id) FROM visits / {TOTAL_ACTIVE_OUTLETS.toLocaleString()} active outlets.
+          {loading ? '' : ' Click ↺ to refresh.'}
         </div>
       </div>
     </div>

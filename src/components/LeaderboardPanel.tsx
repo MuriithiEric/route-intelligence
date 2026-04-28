@@ -497,8 +497,18 @@ export default function LeaderboardPanel({
               onClick={() => handleRepClick(rep)}
               style={{
                 padding: '7px 10px',
-                borderBottom: '1px solid rgba(0,0,0,0.04)',
-                borderLeft: `3px solid ${leftBorderColor}`,
+                ...(isTop
+                  ? {
+                      border: '2px solid #C9963E',
+                      borderRadius: 6,
+                      margin: '4px 4px 2px',
+                      boxShadow: '0 1px 6px rgba(201,150,62,0.25)',
+                    }
+                  : {
+                      borderBottom: '1px solid rgba(0,0,0,0.04)',
+                      borderLeft: `3px solid ${leftBorderColor}`,
+                    }
+                ),
                 background: bgColor,
                 cursor: 'pointer',
                 transition: 'background 0.15s',
@@ -507,8 +517,8 @@ export default function LeaderboardPanel({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 {/* Rank */}
-                <span style={{ fontSize: 10, color: '#9CA3AF', width: 16, textAlign: 'right', flexShrink: 0 }}>
-                  {i + 1}
+                <span style={{ fontSize: 10, color: isTop ? '#C9963E' : '#9CA3AF', width: 16, textAlign: 'right', flexShrink: 0, fontWeight: isTop ? 700 : 400 }}>
+                  {isTop ? '🏆' : i + 1}
                 </span>
 
                 {/* Avatar */}

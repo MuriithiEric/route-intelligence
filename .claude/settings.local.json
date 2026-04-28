@@ -17,7 +17,10 @@
       "Bash(netlify --version)",
       "Bash(npm list:*)",
       "Bash(npx netlify:*)",
-      "Bash(netlify status:*)"
+      "Bash(netlify status:*)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

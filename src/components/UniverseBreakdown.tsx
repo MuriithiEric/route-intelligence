@@ -4,7 +4,7 @@ import type { Tier, CustomerCategoryCounts } from '../types';
 import { TIER_COLOURS } from '../types';
 
 const TIER_DEFS: Array<{ key: Tier; label: string }> = [
-  { key: 'DISTRIBUTOR',   label: 'Distributors'  },
+  { key: 'DISTRIBUTOR',   label: 'BIDCO Dist.'   },
   { key: 'KEY ACCOUNT',   label: 'Key Accounts'  },
   { key: 'HUB',           label: 'Hubs'          },
   { key: 'STOCKIST',      label: 'Stockists'     },
@@ -93,6 +93,40 @@ export default function UniverseBreakdown({ customerCounts }: UniverseBreakdownP
           </React.Fragment>
         );
       })}
+
+      {/* DISTRIBUTOR - FEEDS: informational chip, not filterable */}
+      {customerCounts && (customerCounts['DISTRIBUTOR - FEEDS'] ?? 0) > 0 && (
+        <>
+          <div style={{ width: 1, height: 16, background: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+          <div
+            title="Agricultural feeds distributors — separate from BIDCO FMCG distributors"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 10px',
+              height: 36,
+              flexShrink: 0,
+              opacity: 0.7,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: '#E07B39',
+                display: 'inline-block',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#1E3A5F' }}>
+              {customerCounts['DISTRIBUTOR - FEEDS'].toLocaleString()}
+            </span>
+            <span style={{ fontSize: 10, color: '#6B7280' }}>Dist. Feeds</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }

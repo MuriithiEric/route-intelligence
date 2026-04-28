@@ -138,6 +138,7 @@ export const GROUP_COLOURS: Record<string, string> = {
   'TTMS': '#E07B39',
   'BIDCO RTM': '#6B4C9A',
   'BIDCO VAN SALES': '#1565C0',
+  'ZAYN VAN SALES': '#1976D2',
   'RHOD': '#C9963E',
   'SUNTORY RTM': '#0E8C7A',
   'MT ATMS': '#558B2F',
@@ -151,7 +152,9 @@ export const TIER_COLOURS: Record<string, string> = {
   'HUB':          '#C9963E',
   'STOCKIST':     '#E07B39',
   'MODERN TRADE': '#0E8C7A',
+  'SUPERMARKET':  '#0E8C7A', // alias — same color as Modern Trade
   'GENERAL TRADE':'#F97316',
+  'DISTRIBUTOR - FEEDS': '#E07B39', // shown as orange, separate from BIDCO distributors
 };
 
 export const REGIONS: Region[] = ['NAIROBI', 'NORTH RIFT', 'SOUTH RIFT', 'CENTRAL', 'LAKE', 'COAST'];
@@ -173,6 +176,7 @@ export interface CustomerCategoryCounts {
   STOCKIST: number;
   'MODERN TRADE': number;
   'GENERAL TRADE': number;
+  'DISTRIBUTOR - FEEDS': number;
   total: number;
 }
 

@@ -3,6 +3,10 @@ import { Users, Store, Clock, Target, Globe } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import type { UserGroup, UserGroupRegion, RepProfile, TTMSummary, CustomerCategoryCounts } from '../types';
 
+// Total active outlets across Kenya (including those without GPS coordinates)
+// Used as the denominator for all coverage calculations — Fix 1B
+const TOTAL_ACTIVE_OUTLETS = 86148;
+
 interface StatsBarProps {
   userGroups: UserGroup[];
   userGroupRegions: UserGroupRegion[];
@@ -62,25 +66,27 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
   const stats = useMemo(() => {
     const totalOutlets = customerCounts?.total || 0;
 
-    // Weighted average visit duration from ttmSummary — equals AVG(duration) FROM visits
     const computeWeightedAvg = (reps: typeof ttmSummary) => {
       const totalV = reps.reduce((s, r) => s + r.total_visits, 0);
       return totalV > 0 ? reps.reduce((s, r) => s + r.avg_duration * r.total_visits, 0) / totalV : 0;
     };
 
-    // Coverage: always COUNT(DISTINCT shop_id) / COUNT(customers) × 100
-    const pct = (shops: number) => totalOutlets > 0 ? (shops / totalOutlets) * 100 : 0;
+    // Coverage always uses 86,148 as denominator — Fix 1B
+    const pct = (shops: number) => (shops / TOTAL_ACTIVE_OUTLETS) * 100;
 
     if (selectedRep) {
       const rep = ttmSummary.find(r => r.raw_name === selectedRep);
+      const repShops = rep?.unique_shops || 0;
       return {
         customerUniverse: totalOutlets,
-        shopsVisited: rep?.unique_shops || 0,
-        activeStaff: 1,
+        shopsVisited: repShops,
+        activeStaff: rep?.name || selectedRep,
         avgVisit: rep?.avg_duration || 0,
-        nationalCoverage: rep ? pct(rep.unique_shops) : 0,
+        nationalCoverage: pct(repShops),
         coverageLabel: 'INDIVIDUAL COVERAGE',
-        coverageTooltip: 'Percentage of all mapped outlets this rep has visited',
+        coverageTooltip: `Percentage of all 86,148 active outlets this rep has visited`,
+        coverageSubtitle: `${repShops.toLocaleString()} of ${TOTAL_ACTIVE_OUTLETS.toLocaleString()} outlets visited`,
+        staffSubtitle: rep?.role || 'Selected rep',
       };
     }
 
@@ -89,14 +95,17 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
         r => r.category === filters.userGroup && r.region === filters.region
       );
       const groupReps = ttmSummary.filter(r => r.role === filters.userGroup);
+      const shops = regionData?.unique_shops || 0;
       return {
         customerUniverse: totalOutlets,
-        shopsVisited: regionData?.unique_shops || 0,
+        shopsVisited: shops,
         activeStaff: regionData?.unique_reps || 0,
         avgVisit: computeWeightedAvg(groupReps),
-        nationalCoverage: pct(regionData?.unique_shops || 0),
+        nationalCoverage: pct(shops),
         coverageLabel: `${filters.userGroup} COVERAGE`,
-        coverageTooltip: `Percentage of mapped outlets visited by ${filters.userGroup} in ${filters.region}`,
+        coverageTooltip: `Percentage of 86,148 active outlets visited by ${filters.userGroup} in ${filters.region}`,
+        coverageSubtitle: `${shops.toLocaleString()} of ${TOTAL_ACTIVE_OUTLETS.toLocaleString()} outlets`,
+        staffSubtitle: `${regionData?.unique_reps || 0} reps in ${filters.region}`,
       };
     }
 
@@ -114,22 +123,24 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       } else {
         groupActiveStaff = groupTotalReps > 0 ? `${groupActiveReps} Active / ${groupTotalReps} Total` : groupActiveReps;
       }
+      const shops = group?.unique_shops || 0;
       return {
         customerUniverse: totalOutlets,
-        shopsVisited: group?.unique_shops || 0,
+        shopsVisited: shops,
         activeStaff: groupActiveStaff,
         avgVisit: computeWeightedAvg(groupReps),
-        nationalCoverage: pct(group?.unique_shops || 0),
+        nationalCoverage: pct(shops),
         coverageLabel: 'GROUP COVERAGE',
-        coverageTooltip: `Percentage of mapped outlets visited by ${filters.userGroup}`,
+        coverageTooltip: `Percentage of 86,148 active outlets visited by ${filters.userGroup}`,
+        coverageSubtitle: `${shops.toLocaleString()} of ${TOTAL_ACTIVE_OUTLETS.toLocaleString()} outlets`,
+        staffSubtitle: `${groupActiveReps} active · ${groupInactiveReps} inactive`,
       };
     }
 
-    // National — COUNT(DISTINCT shop_id) / COUNT(customers) × 100
+    // National — Fix 1A: COUNT(DISTINCT shop_id) FROM visits / 86,148
     const distinctShops = shopsVisited ?? 0;
     const nationalCoverage = pct(distinctShops);
 
-    // Active staff: SUM(active_rep_count), SUM(active_users) FROM user_groups
     const totalActiveReps = userGroups.reduce((s, g) => s + (g.active_rep_count || 0), 0);
     const totalInactiveReps = userGroups.reduce((s, g) => s + (g.inactive_rep_count || 0), 0);
     const totalAllReps = userGroups.reduce((s, g) => s + (g.active_users || 0), 0);
@@ -150,7 +161,11 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       avgVisit: computeWeightedAvg(ttmSummary),
       nationalCoverage,
       coverageLabel: 'NATIONAL COVERAGE',
-      coverageTooltip: 'Percentage of mapped outlets visited by at least one field rep',
+      coverageTooltip: 'Percentage of all active outlets visited by at least one field rep',
+      coverageSubtitle: shopsVisited != null
+        ? `${distinctShops.toLocaleString()} of ${TOTAL_ACTIVE_OUTLETS.toLocaleString()} active outlets visited`
+        : `of ${TOTAL_ACTIVE_OUTLETS.toLocaleString()} active outlets`,
+      staffSubtitle: `${totalActiveReps} active · ${totalInactiveReps} inactive`,
     };
   }, [filters, selectedRep, userGroups, userGroupRegions, ttmSummary, repStatusFilter, customerCounts, shopsVisited]);
 
@@ -160,12 +175,6 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
     ? '#E07B39'
     : '#22C55E';
 
-  // Subtitle for coverage: "X of Y outlets visited"
-  const coverageSubtitle = stats.customerUniverse > 0
-    ? `${(typeof stats.shopsVisited === 'number' ? stats.shopsVisited : 0).toLocaleString()} of ${stats.customerUniverse.toLocaleString()} outlets visited`
-    : undefined;
-
-  // Label context for coverage
   const coverageLabel = selectedRep
     ? 'INDIVIDUAL COVERAGE'
     : filters.userGroup
@@ -178,6 +187,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       icon: <Globe size={16} color="#E07B39" />,
       label: 'CUSTOMER UNIVERSE',
       value: stats.customerUniverse,
+      subtitle: 'Active outlets with GPS coordinates',
       tooltip: 'Total active outlets with GPS coordinates in Kenya. Click to explore by region and tier.',
       clickable: true,
       onClick: () => setShowUniversePanel(true),
@@ -187,14 +197,16 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       icon: <Store size={16} color="#4CAF50" />,
       label: 'SHOPS VISITED',
       value: stats.shopsVisited,
-      tooltip: 'Unique outlets visited by at least one field rep',
+      subtitle: 'Unique outlets visited',
+      tooltip: 'COUNT(DISTINCT shop_id) FROM visits — unique outlets visited by at least one field rep',
     },
     {
       bg: '#E3F2FD',
       icon: <Users size={16} color="#2196F3" />,
       label: 'ACTIVE FIELD STAFF',
       value: stats.activeStaff,
-      valueFontSize: typeof stats.activeStaff === 'string' ? 11 : 15,
+      valueFontSize: typeof stats.activeStaff === 'string' && stats.activeStaff.includes('/') ? 11 : 15,
+      subtitle: selectedRep ? (stats.staffSubtitle || '') : (stats.staffSubtitle || ''),
       tooltip: 'Total field reps / Active reps currently in the system',
     },
     {
@@ -203,6 +215,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       label: 'AVG VISIT',
       value: stats.avgVisit,
       suffix: ' min',
+      subtitle: 'Average time per shop visit',
       tooltip: 'Average time spent per shop visit across all reps',
     },
     {
@@ -212,7 +225,7 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
       value: stats.nationalCoverage,
       suffix: '%',
       coverageValue: stats.nationalCoverage,
-      subtitle: coverageSubtitle,
+      subtitle: stats.coverageSubtitle,
       tooltip: stats.coverageTooltip,
     },
   ];
@@ -239,8 +252,8 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
               key={i}
               className="skeleton"
               style={{
-                height: 46,
-                width: 170,
+                height: 54,
+                width: 185,
                 borderRadius: 8,
                 flexShrink: 0,
               }}
@@ -258,12 +271,11 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
-                minWidth: card.subtitle ? 190 : 160,
+                minWidth: card.subtitle ? 200 : 170,
                 flexShrink: 0,
-                minHeight: 40,
+                minHeight: 46,
                 cursor: card.clickable ? 'pointer' : 'default',
                 transition: 'opacity 0.15s, box-shadow 0.15s',
-                boxShadow: card.clickable ? undefined : undefined,
                 border: card.clickable ? '1px solid transparent' : 'none',
                 outline: 'none',
               }}
@@ -303,9 +315,8 @@ export default function StatsBar({ userGroups, userGroupRegions, ttmSummary, cus
                     <span style={{ fontSize: 11, fontWeight: 500 }}>{card.suffix}</span>
                   )}
                 </div>
-                {/* FIX 2: coverage subtitle showing visited / total */}
                 {card.subtitle && (
-                  <div style={{ fontSize: 9, color: '#6B7280', marginTop: 1, whiteSpace: 'nowrap' }}>
+                  <div style={{ fontSize: 9, color: '#6B7280', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>
                     {card.subtitle}
                   </div>
                 )}
