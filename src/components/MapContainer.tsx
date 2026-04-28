@@ -690,6 +690,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   const [visitsLoading, setVisitsLoading] = useState(false);
   const [zoom, setZoom] = useState(7);
   const [nearbyUnvisitedCount, setNearbyUnvisitedCount] = useState(0);
+  const [universeCount, setUniverseCount] = useState<number | null>(null);
 
   const repColor = useMemo(() => {
     if (!selectedRep) return '#C9963E';
@@ -729,6 +730,11 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
       setNearbyUnvisitedCount(0);
     }
   }, [selectedRep, repDateFrom, repDateTo, fetchRepVisitsForDateRange]);
+
+  // Reset universe count when layer is toggled off
+  useEffect(() => {
+    if (!layers.customerUniverse) setUniverseCount(null);
+  }, [layers.customerUniverse]);
 
   const handleRepClick = useCallback((rep: TTMSummary) => {
     setSelectedRep(selectedRep === rep.raw_name ? null : rep.raw_name);
@@ -844,11 +850,37 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         </div>
       )}
 
+      {/* Outlet count badge — bottom-left, above layers panel */}
+      {layers.customerUniverse && (
+        <div style={{
+          position: 'absolute', bottom: 48, left: 12, zIndex: 1001,
+          background: 'rgba(255,255,255,0.96)', borderRadius: 6,
+          padding: '4px 10px', fontSize: 11, fontWeight: 600,
+          fontFamily: 'Inter, system-ui, sans-serif', color: '#1E3A5F',
+          boxShadow: '0 1px 6px rgba(0,0,0,0.12)',
+          border: '1px solid rgba(0,0,0,0.08)', pointerEvents: 'none',
+        }}>
+          {universeCount === null ? 'Loading outlets…' : `${universeCount.toLocaleString()} outlets`}
+        </div>
+      )}
+
       <LeafletMap center={CENTER} zoom={7} style={{ width: '100%', height: '100%' }} zoomControl preferCanvas>
-        <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        />
+        {/* CartoDB light basemap when customer universe is on — makes colored dots pop */}
+        {layers.customerUniverse ? (
+          <TileLayer
+            key="carto-light"
+            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            subdomains="abcd"
+            maxZoom={19}
+          />
+        ) : (
+          <TileLayer
+            key="osm"
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
+        )}
 
         <MapEventListener onZoomChange={setZoom} />
         <MapFlyController ttmSummary={ttmSummary} dateVisits={dateVisits} hasDateFilter={hasDateFilter} />
@@ -858,7 +890,11 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         )}
 
         {layers.customerUniverse && (
-          <CustomerUniverseLayer activeTier={layers.customerTier} tierVisibility={layers.tierVisibility} />
+          <CustomerUniverseLayer
+            activeTier={layers.customerTier}
+            tierVisibility={layers.tierVisibility}
+            onCountChange={count => { setUniverseCount(count); }}
+          />
         )}
 
         {/* All-time route + shop layers — only when no date filter */}

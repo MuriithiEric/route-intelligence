@@ -1,10 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useMap } from 'react-leaflet';
 import L from 'leaflet';
-import Supercluster from 'supercluster';
 import { supabase } from '../../lib/supabase';
 
-// ─── Color map (mirrors MapContainer CUSTOMER_COLOURS) ───────────────────────
 const COLOURS: Record<string, string> = {
   DISTRIBUTOR: '#C0392B',
   'KEY ACCOUNT': '#7E57C2',
@@ -26,148 +24,118 @@ function normCat(cat: string): string {
   return 'GENERAL TRADE';
 }
 
+function getRadius(normalized: string): number {
+  if (normalized === 'DISTRIBUTOR') return 7;
+  if (normalized === 'KEY ACCOUNT') return 6;
+  if (normalized === 'HUB') return 6;
+  if (normalized === 'STOCKIST') return 5;
+  if (normalized === 'SUPERMARKET') return 5;
+  if (normalized === 'DISTRIBUTOR - FEEDS') return 3;
+  return 2; // GENERAL TRADE — small so it fills without overpowering
+}
+
 type CPoint = {
-  id: string; name: string; cat: string; tier: string | null;
+  id: string; name: string; cat: string;
   lat: number; lng: number; last_visit: string | null;
-  region: string; territory: string | null; channel: string | null; phone: string | null;
+  region: string; territory: string | null; channel: string | null;
 };
 
 interface Props {
   tierVisibility: Record<string, boolean>;
   activeTier: string | null;
+  onCountChange?: (count: number) => void;
 }
 
-const MAX_CACHE = 50;
+const MAX_CACHE = 30;
 
-export default function CustomerUniverseLayer({ tierVisibility, activeTier }: Props) {
+export default function CustomerUniverseLayer({ tierVisibility, activeTier, onCountChange }: Props) {
   const map = useMap();
 
-  // Refs hold mutable state that doesn't trigger re-renders
+  // Stable refs — updated every render so callbacks never go stale
   const tierVisRef = useRef(tierVisibility);
   tierVisRef.current = tierVisibility;
   const activeTierRef = useRef(activeTier);
   activeTierRef.current = activeTier;
+  const onCountRef = useRef(onCountChange);
+  onCountRef.current = onCountChange;
 
   const layerGroup = useRef<L.LayerGroup | null>(null);
   const renderer = useRef(L.canvas({ padding: 0.5 }));
-  const allCustomers = useRef<Map<string, CPoint>>(new Map());
-  const clusterIdx = useRef<Supercluster | null>(null);
-  const vpCache = useRef<Map<string, string[]>>(new Map());
+
+  // Current viewport batch — replaced on each fetch (no accumulation)
+  const currentBatch = useRef<CPoint[]>([]);
+
+  // LRU viewport cache: cacheKey → CPoint[]
+  const vpCache = useRef<Map<string, CPoint[]>>(new Map());
   const lruOrder = useRef<string[]>([]);
   const isFetching = useRef(false);
   const needsUpdate = useRef(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // ── Cache key: rounded to 2dp to create tiles ──────────────────────────────
-  const cacheKey = useCallback((bounds: L.LatLngBounds, zoom: number) => {
+  // 0.5-degree tile resolution to maximise cache hits across similar viewports
+  const cacheKey = useCallback((bounds: L.LatLngBounds) => {
     const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-    return `${sw.lat.toFixed(2)},${sw.lng.toFixed(2)},${ne.lat.toFixed(2)},${ne.lng.toFixed(2)},${Math.floor(zoom)}`;
+    return [
+      Math.floor(sw.lat * 2) / 2,
+      Math.floor(sw.lng * 2) / 2,
+      Math.ceil(ne.lat * 2) / 2,
+      Math.ceil(ne.lng * 2) / 2,
+    ].join(',');
   }, []);
 
-  // ── Rebuild supercluster index from accumulated customers ───────────────────
-  const rebuildIdx = useCallback(() => {
-    const tv = tierVisRef.current;
-    const points = Array.from(allCustomers.current.values())
-      .filter(c => tv[normCat(c.cat)] ?? true)
-      .map(c => ({
-        type: 'Feature' as const,
-        geometry: { type: 'Point' as const, coordinates: [c.lng, c.lat] },
-        properties: { ...c },
-      }));
-    const idx = new Supercluster({ radius: 60, maxZoom: 14, minPoints: 3 });
-    idx.load(points);
-    clusterIdx.current = idx;
-  }, []);
-
-  // ── Render clusters for the current viewport ────────────────────────────────
+  // ── Pure canvas render — no React, no SVG, no DOM per-marker ────────────────
   const renderLayer = useCallback(() => {
-    if (!clusterIdx.current) return;
     if (!layerGroup.current) {
       layerGroup.current = L.layerGroup().addTo(map);
     } else {
       layerGroup.current.clearLayers();
     }
 
-    const bounds = map.getBounds();
-    const zoom = Math.floor(map.getZoom());
-    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-    const clusters = clusterIdx.current.getClusters([sw.lng, sw.lat, ne.lng, ne.lat], zoom);
+    const tv = tierVisRef.current;
+    let count = 0;
 
-    for (const cl of clusters) {
-      const [lng, lat] = cl.geometry.coordinates;
-      const pos: L.LatLngTuple = [lat, lng];
+    for (const c of currentBatch.current) {
+      if (!c.lat || !c.lng) continue;
+      const normalized = normCat(c.cat);
+      if (!(tv[normalized] ?? true)) continue;
 
-      if ((cl.properties as Supercluster.ClusterProperties).cluster) {
-        const props = cl.properties as Supercluster.ClusterProperties;
-        const count = props.point_count;
-        const size = count > 1000 ? 52 : count > 500 ? 46 : count > 100 ? 38 : count > 10 ? 30 : 22;
-        const label = count >= 10000 ? `${Math.round(count / 1000)}k`
-          : count >= 1000 ? `${(count / 1000).toFixed(1)}k`
-          : String(count);
+      const color = COLOURS[normalized] || '#9E9E9E';
+      const isVisited = !!c.last_visit;
+      const radius = getRadius(normalized);
 
-        const icon = L.divIcon({
-          html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:#1E3A5F;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-family:Inter,system-ui,sans-serif;font-size:${count > 999 ? 9 : 11}px;font-weight:700;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.3)">${label}</div>`,
-          className: '',
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
-        });
+      const cm = L.circleMarker([c.lat, c.lng], {
+        renderer: renderer.current,
+        radius,
+        fillColor: isVisited ? color : '#FFFFFF',
+        fillOpacity: isVisited ? 0.85 : 0.6,
+        color,
+        weight: isVisited ? 1 : 1.5,
+        dashArray: isVisited ? undefined : '3 3',
+      });
 
-        const m = L.marker(pos, { icon });
-        m.on('click', () => {
-          const ez = clusterIdx.current!.getClusterExpansionZoom(props.cluster_id);
-          map.flyTo(pos, Math.min(ez + 1, 18), { duration: 0.5 });
-        });
-        m.bindTooltip(`${count.toLocaleString()} outlets`, { direction: 'top' });
-        layerGroup.current!.addLayer(m);
-      } else {
-        const p = cl.properties as CPoint;
-        const normalized = normCat(p.cat);
-        const color = COLOURS[normalized] || '#9E9E9E';
-        const isVisited = !!p.last_visit;
-        const radius = normalized === 'DISTRIBUTOR' ? 8
-          : normalized === 'KEY ACCOUNT' ? 6
-          : normalized === 'HUB' ? 6
-          : normalized === 'SUPERMARKET' ? 5
-          : normalized === 'STOCKIST' ? 4 : 3;
-
-        const fmt = (d: string) =>
-          d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Never';
-
-        const cm = L.circleMarker(pos, {
-          renderer: renderer.current,
-          radius,
-          fillColor: isVisited ? color : '#FFFFFF',
-          fillOpacity: isVisited ? 0.85 : 0.9,
-          color,
-          weight: isVisited ? 1 : 1.5,
-          dashArray: isVisited ? undefined : '4 3',
-        });
-
-        cm.bindTooltip(
-          `${p.name} · ${p.cat}${!isVisited ? ' · Never visited' : ''}`,
-          { direction: 'top' }
-        );
-        cm.bindPopup(`
-          <div style="font-family:Inter,system-ui,sans-serif;padding:2px 0">
-            <div style="font-weight:700;color:#1E3A5F;font-size:13px;margin-bottom:4px">${p.name}</div>
-            <span style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">${p.cat}</span>
-            <span style="background:${isVisited ? '#DCFCE7' : '#FEF2F2'};color:${isVisited ? '#16A34A' : '#EF4444'};font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;margin-left:4px">${isVisited ? 'Visited' : 'Never visited'}</span>
-            <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px">
-              ${p.region ? `<tr><td style="color:#6B7280;padding-right:8px;padding-bottom:3px">Region</td><td style="color:#1E3A5F;font-weight:600">${p.region}</td></tr>` : ''}
-              ${p.territory ? `<tr><td style="color:#6B7280;padding-right:8px;padding-bottom:3px">Territory</td><td style="color:#1E3A5F;font-weight:600">${p.territory}</td></tr>` : ''}
-              ${p.channel ? `<tr><td style="color:#6B7280;padding-right:8px;padding-bottom:3px">Channel</td><td style="color:#1E3A5F;font-weight:600">${p.channel}</td></tr>` : ''}
-              <tr><td style="color:#6B7280;padding-right:8px;padding-bottom:3px">Last visit</td><td style="color:#1E3A5F;font-weight:600">${fmt(p.last_visit ?? '')}</td></tr>
-              ${p.phone ? `<tr><td style="color:#6B7280;padding-right:8px">Phone</td><td style="color:#1E3A5F;font-weight:600">${p.phone}</td></tr>` : ''}
-            </table>
+      // Lazy popup — only created on click, not on render
+      const name = c.name, cat = c.cat, region = c.region, territory = c.territory, channel = c.channel;
+      cm.bindPopup(() => `
+        <div style="font-family:Inter,system-ui,sans-serif;padding:2px 0;min-width:180px">
+          <div style="font-weight:700;color:#1E3A5F;font-size:13px;margin-bottom:4px">${name}</div>
+          <span style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">${cat}</span>
+          <span style="background:${isVisited ? '#DCFCE7' : '#FEF2F2'};color:${isVisited ? '#16A34A' : '#EF4444'};font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;margin-left:4px">${isVisited ? 'Visited' : 'Never visited'}</span>
+          <div style="font-size:11px;margin-top:6px">
+            ${region ? `<div style="color:#6B7280">Region: <strong style="color:#1E3A5F">${region}</strong></div>` : ''}
+            ${territory ? `<div style="color:#6B7280">Territory: <strong style="color:#1E3A5F">${territory}</strong></div>` : ''}
+            ${channel ? `<div style="color:#6B7280">Channel: <strong style="color:#1E3A5F">${channel}</strong></div>` : ''}
           </div>
-        `, { minWidth: 200, maxWidth: 260 });
+        </div>
+      `, { maxWidth: 220 });
 
-        layerGroup.current!.addLayer(cm);
-      }
+      layerGroup.current.addLayer(cm);
+      count++;
     }
+
+    onCountRef.current?.(count);
   }, [map]);
 
-  // ── Fetch viewport data, accumulate, rebuild index, re-render ───────────────
+  // ── Fetch viewport data → cache → render ────────────────────────────────────
   const fetchAndRender = useCallback(async () => {
     if (isFetching.current) { needsUpdate.current = true; return; }
     isFetching.current = true;
@@ -175,44 +143,40 @@ export default function CustomerUniverseLayer({ tierVisibility, activeTier }: Pr
 
     try {
       const bounds = map.getBounds();
-      const zoom = map.getZoom();
-      const key = cacheKey(bounds, zoom);
+      const key = cacheKey(bounds);
 
-      if (!vpCache.current.has(key)) {
+      if (vpCache.current.has(key)) {
+        currentBatch.current = vpCache.current.get(key)!;
+      } else {
         const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-        const latPad = (ne.lat - sw.lat) * 0.1;
-        const lngPad = (ne.lng - sw.lng) * 0.1;
+        const latPad = (ne.lat - sw.lat) * 0.15;
+        const lngPad = (ne.lng - sw.lng) * 0.15;
         const at = activeTierRef.current;
         const dbCat = at === 'MODERN TRADE' ? 'SUPERMARKET' : at;
 
         let q = supabase
           .from('customers')
-          .select('id,name,cat,tier,lat,lng,last_visit,region,territory,channel,phone')
+          .select('id,name,cat,lat,lng,last_visit,region,territory,channel')
           .gte('lat', sw.lat - latPad).lte('lat', ne.lat + latPad)
           .gte('lng', sw.lng - lngPad).lte('lng', ne.lng + lngPad)
           .not('lat', 'is', null).not('lng', 'is', null)
-          .limit(5000);
+          .limit(15000);
 
         if (dbCat) q = (q as typeof q).eq('cat', dbCat);
 
         const { data, error } = await q;
         if (error || !data) return;
 
-        const ids: string[] = [];
-        for (const c of data) {
-          allCustomers.current.set(String(c.id), c as unknown as CPoint);
-          ids.push(String(c.id));
-        }
+        const batch = data as unknown as CPoint[];
+        currentBatch.current = batch;
 
-        // LRU eviction — keep max MAX_CACHE viewport tiles
+        // LRU eviction at 30 tiles
         if (lruOrder.current.length >= MAX_CACHE) {
           const evicted = lruOrder.current.shift()!;
           vpCache.current.delete(evicted);
         }
-        vpCache.current.set(key, ids);
+        vpCache.current.set(key, batch);
         lruOrder.current.push(key);
-
-        rebuildIdx();
       }
 
       renderLayer();
@@ -220,32 +184,32 @@ export default function CustomerUniverseLayer({ tierVisibility, activeTier }: Pr
       isFetching.current = false;
       if (needsUpdate.current) fetchAndRender();
     }
-  }, [map, cacheKey, rebuildIdx, renderLayer]);
+  }, [map, cacheKey, renderLayer]);
 
   const debouncedFetch = useCallback(() => {
     clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(fetchAndRender, 400);
+    debounceTimer.current = setTimeout(fetchAndRender, 350);
   }, [fetchAndRender]);
 
-  // ── Tier visibility change: rebuild index + re-render (no new fetch) ─────────
+  // Tier toggle: instant re-render from existing batch — no network
   useEffect(() => {
-    if (allCustomers.current.size === 0) return;
-    rebuildIdx();
+    if (currentBatch.current.length === 0) return;
     renderLayer();
-  }, [tierVisibility, rebuildIdx, renderLayer]);
+  }, [tierVisibility, renderLayer]);
 
-  // ── activeTier change: clear cache + re-fetch ────────────────────────────────
+  // activeTier change: flush cache + re-fetch with new server filter
   useEffect(() => {
     vpCache.current.clear();
     lruOrder.current = [];
-    allCustomers.current.clear();
-    clusterIdx.current = null;
+    currentBatch.current = [];
     if (layerGroup.current) layerGroup.current.clearLayers();
+    onCountRef.current?.(0);
     fetchAndRender();
   }, [activeTier, fetchAndRender]);
 
-  // ── Mount: attach map event listeners; unmount: clean up ─────────────────────
+  // Mount: initial fetch + event listeners; unmount: clean up layer + listeners
   useEffect(() => {
+    fetchAndRender();
     map.on('moveend', debouncedFetch);
     map.on('zoomend', debouncedFetch);
     return () => {
@@ -257,7 +221,7 @@ export default function CustomerUniverseLayer({ tierVisibility, activeTier }: Pr
         layerGroup.current = null;
       }
     };
-  }, [map, debouncedFetch]);
+  }, [map, fetchAndRender, debouncedFetch]);
 
   return null;
 }
