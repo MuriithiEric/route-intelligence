@@ -446,9 +446,10 @@ function resolveRegionCentroid(primaryRegion: string): LatLngTuple {
   return matchKey ? REGION_CENTROIDS[matchKey] : REGION_CENTROIDS['NAIROBI'];
 }
 
-// Flies map to rep's region on rep select, and zooms in when a tier is activated
+// Flies map to rep's region on rep select, zooms in when a tier is activated,
+// and handles the distributor-region fly-to signal from CustomerUniversePanel.
 function MapFlyController({ ttmSummary }: { ttmSummary: TTMSummary[] }) {
-  const { selectedRep, filters } = useAppContext();
+  const { selectedRep, filters, mapFlyTo, setMapFlyTo } = useAppContext();
   const map = useMap();
   const prevRep = useRef<string | null>(null);
   const prevTier = useRef<string | null>(null);
@@ -479,6 +480,13 @@ function MapFlyController({ ttmSummary }: { ttmSummary: TTMSummary[] }) {
   useEffect(() => {
     if (!filters.activeTier) prevTier.current = null;
   }, [filters.activeTier]);
+
+  // Distributor-region fly-to: triggered by CustomerUniversePanel region click
+  useEffect(() => {
+    if (!mapFlyTo) return;
+    map.flyTo([mapFlyTo.lat, mapFlyTo.lng], mapFlyTo.zoom, { duration: 1.4, easeLinearity: 0.35 });
+    setMapFlyTo(null); // consume the signal after flying
+  }, [mapFlyTo, map, setMapFlyTo]);
 
   return null;
 }

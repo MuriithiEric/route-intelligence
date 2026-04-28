@@ -1,9 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, RefreshCw, AlertTriangle } from 'lucide-react';
+import { X, RefreshCw, AlertTriangle, MapPin } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { CustomerCategoryCounts, TTMSummary } from '../types';
 import { TIER_COLOURS } from '../types';
 import { useAppContext } from '../context/AppContext';
+
+// Region centroids for map fly-to — must match MapContainer's REGION_CENTROIDS
+const REGION_CENTROIDS: Record<string, { lat: number; lng: number; zoom: number }> = {
+  'Nairobi':    { lat: -1.286,  lng: 36.818, zoom: 11 },
+  'North Rift': { lat:  0.519,  lng: 35.271, zoom: 9  },
+  'South Rift': { lat: -0.905,  lng: 36.065, zoom: 9  },
+  'Central':    { lat: -0.304,  lng: 36.886, zoom: 9  },
+  'Lake':       { lat: -0.102,  lng: 34.754, zoom: 9  },
+  'Coast':      { lat: -3.217,  lng: 40.117, zoom: 9  },
+  'Nyanza':     { lat: -0.685,  lng: 34.750, zoom: 10 },
+  'Other':      { lat:  0.024,  lng: 37.906, zoom: 7  },
+};
 
 // Total active outlets for coverage denominator — Fix 1B
 const TOTAL_ACTIVE_OUTLETS = 86148;
@@ -122,7 +134,7 @@ async function fetchAllColumn<T>(
 }
 
 export default function CustomerUniversePanel({ customerCounts, ttmSummary, onClose }: CustomerUniversePanelProps) {
-  const { filters } = useAppContext();
+  const { filters, setLayers, setMapFlyTo, setShowUniversePanel } = useAppContext();
   const [activeTab, setActiveTab] = useState<'region' | 'tier'>('region');
   const [regionRows, setRegionRows] = useState<RegionRow[]>([]);
   const [tierRows, setTierRows] = useState<TierRow[]>([]);
@@ -426,23 +438,54 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
                 <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF', fontSize: 12 }}>
                   No regional data found
                 </div>
-              ) : regionRows.map(row => (
-                <div key={row.region} style={{ padding: '10px 0', borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 75px', gap: 8, alignItems: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3A5F' }}>{row.region}</div>
-                    <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'right' }}>
-                      {row.total.toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F', textAlign: 'right' }}>
-                      {row.visited.toLocaleString()}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
-                      {row.coverage.toFixed(1)}%
-                    </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 9, color: '#9CA3AF', padding: '6px 0 2px', fontStyle: 'italic' }}>
+                    Click a region to fly the map there
                   </div>
-                  <CoverageBar pct={row.coverage} color={coverageColor(row.coverage)} />
-                </div>
-              ))}
+                  {regionRows.map(row => {
+                    const centroid = REGION_CENTROIDS[row.region];
+                    return (
+                      <div
+                        key={row.region}
+                        onClick={() => {
+                          if (centroid) {
+                            setMapFlyTo({ ...centroid, label: row.region });
+                            setShowUniversePanel(false);
+                          }
+                        }}
+                        style={{
+                          padding: '10px 4px',
+                          borderBottom: '1px solid rgba(0,0,0,0.04)',
+                          cursor: centroid ? 'pointer' : 'default',
+                          borderRadius: 4,
+                          transition: 'background 0.12s',
+                        }}
+                        onMouseEnter={e => centroid && ((e.currentTarget as HTMLDivElement).style.background = '#F9FAFB')}
+                        onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
+                        title={centroid ? `Fly map to ${row.region}` : undefined}
+                      >
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 80px 75px', gap: 8, alignItems: 'center' }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#1E3A5F', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {centroid && <MapPin size={11} color="#6B7280" />}
+                            {row.region}
+                          </div>
+                          <div style={{ fontSize: 12, color: '#6B7280', textAlign: 'right' }}>
+                            {row.total.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F', textAlign: 'right' }}>
+                            {row.visited.toLocaleString()}
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: coverageColor(row.coverage), textAlign: 'right' }}>
+                            {row.coverage.toFixed(1)}%
+                          </div>
+                        </div>
+                        <CoverageBar pct={row.coverage} color={coverageColor(row.coverage)} />
+                      </div>
+                    );
+                  })}
+                </>
+              )}
             </div>
           ) : (
             <div style={{ padding: '0 20px 16px' }}>
@@ -521,6 +564,9 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
                     </button>
                     {showDistDetail && distRows.length > 0 && (
                       <div style={{ marginTop: 8, borderTop: '1px solid rgba(192,57,43,0.2)', paddingTop: 8 }}>
+                        <div style={{ fontSize: 9, color: '#9CA3AF', marginBottom: 6, fontStyle: 'italic' }}>
+                          Click a region to fly the map there and show distributors
+                        </div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 50px 50px 60px', gap: 6, marginBottom: 4 }}>
                           {['Region', 'Total', 'Visited', 'Missing'].map(h => (
                             <div key={h} style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: h === 'Region' ? 'left' : 'right' }}>
@@ -528,17 +574,53 @@ export default function CustomerUniversePanel({ customerCounts, ttmSummary, onCl
                             </div>
                           ))}
                         </div>
-                        {distRows.map(row => (
-                          <div key={row.region} style={{ display: 'grid', gridTemplateColumns: '1fr 50px 50px 60px', gap: 6, padding: '3px 0', borderBottom: '1px solid rgba(0,0,0,0.04)', alignItems: 'center' }}>
-                            <div style={{ fontSize: 11, color: '#1E3A5F', fontWeight: 500 }}>{row.region}</div>
-                            <div style={{ fontSize: 11, color: '#6B7280', textAlign: 'right' }}>{row.total}</div>
-                            <div style={{ fontSize: 11, color: '#16A34A', fontWeight: 600, textAlign: 'right' }}>{row.visited}</div>
-                            <div style={{ fontSize: 11, color: '#C0392B', fontWeight: 600, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
-                              {row.unvisited > 0 && <AlertTriangle size={10} />}
-                              {row.unvisited}
+                        {distRows.map(row => {
+                          const centroid = REGION_CENTROIDS[row.region];
+                          return (
+                            <div
+                              key={row.region}
+                              onClick={() => {
+                                if (centroid) {
+                                  // Activate distributor tier filter on map
+                                  setLayers(prev => ({
+                                    ...prev,
+                                    customerUniverse: true,
+                                    customerTier: 'DISTRIBUTOR',
+                                  }));
+                                  // Signal map to fly to this region
+                                  setMapFlyTo({ ...centroid, label: `${row.region} Distributors` });
+                                  // Close panel so map is fully visible
+                                  setShowUniversePanel(false);
+                                }
+                              }}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 50px 50px 60px',
+                                gap: 6,
+                                padding: '5px 4px',
+                                borderBottom: '1px solid rgba(0,0,0,0.04)',
+                                alignItems: 'center',
+                                cursor: centroid ? 'pointer' : 'default',
+                                borderRadius: 4,
+                                transition: 'background 0.12s',
+                              }}
+                              onMouseEnter={e => centroid && ((e.currentTarget as HTMLDivElement).style.background = 'rgba(192,57,43,0.06)')}
+                              onMouseLeave={e => ((e.currentTarget as HTMLDivElement).style.background = 'transparent')}
+                              title={centroid ? `Fly map to ${row.region} and show distributors` : undefined}
+                            >
+                              <div style={{ fontSize: 11, color: '#1E3A5F', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                {centroid && <MapPin size={10} color="#C0392B" />}
+                                {row.region}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#6B7280', textAlign: 'right' }}>{row.total}</div>
+                              <div style={{ fontSize: 11, color: '#16A34A', fontWeight: 600, textAlign: 'right' }}>{row.visited}</div>
+                              <div style={{ fontSize: 11, color: '#C0392B', fontWeight: 600, textAlign: 'right', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3 }}>
+                                {row.unvisited > 0 && <AlertTriangle size={10} />}
+                                {row.unvisited}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

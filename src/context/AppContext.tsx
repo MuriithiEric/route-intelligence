@@ -3,6 +3,13 @@ import type { FilterState, LayerState, Tier, Region } from '../types';
 
 export type RepStatusFilter = 'all' | 'active' | 'inactive';
 
+export interface MapFlyTarget {
+  lat: number;
+  lng: number;
+  zoom: number;
+  label?: string;
+}
+
 interface AppContextValue {
   filters: FilterState;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
@@ -25,6 +32,9 @@ interface AppContextValue {
   // Universe panel
   showUniversePanel: boolean;
   setShowUniversePanel: React.Dispatch<React.SetStateAction<boolean>>;
+  // Map fly-to — used by distributor region filter
+  mapFlyTo: MapFlyTarget | null;
+  setMapFlyTo: React.Dispatch<React.SetStateAction<MapFlyTarget | null>>;
 }
 
 const defaultFilters: FilterState = {
@@ -56,6 +66,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [compareRep1, setCompareRep1] = useState<string | null>(null);
   const [compareRep2, setCompareRep2] = useState<string | null>(null);
   const [showUniversePanel, setShowUniversePanel] = useState(false);
+  const [mapFlyTo, setMapFlyTo] = useState<MapFlyTarget | null>(null);
 
   const setSelectedRep = useCallback((rep: string | null) => {
     setSelectedRepState(rep);
@@ -95,8 +106,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCompareRep2,
     showUniversePanel,
     setShowUniversePanel,
+    mapFlyTo,
+    setMapFlyTo,
   }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters, repStatusFilter,
-       compareMode, compareRep1, compareRep2, showUniversePanel]);
+       compareMode, compareRep1, compareRep2, showUniversePanel, mapFlyTo]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
