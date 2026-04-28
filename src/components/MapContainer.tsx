@@ -20,6 +20,7 @@ import { useAppContext, useLayers } from '../context/AppContext';
 import { useMapData } from '../hooks/useMapData';
 import type { TTMSummary, Customer, Visit, RouteSummary } from '../types';
 import { GROUP_COLOURS } from '../types';
+import CustomerUniverseLayer from './map/CustomerUniverseLayer';
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -68,7 +69,7 @@ function useDebounce(fn: () => void, delay: number) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Customer Universe Layer — viewport-bounded, multi-tier, visited/unvisited
 // ─────────────────────────────────────────────────────────────────────────────
-function CustomerUniverseLayer({
+function _LegacyCustomerUniverseLayer({
   activeTier,
   tierVisibility,
 }: {
