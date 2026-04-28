@@ -367,6 +367,96 @@ function DayRouteLayer({ visits, repColor }: { visits: Visit[]; repColor: string
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Route Neighbourhood Layer — unvisited customers in the route corridor
+// ─────────────────────────────────────────────────────────────────────────────
+function RouteNeighbourhoodLayer({
+  dateVisits,
+  onLoad,
+}: {
+  dateVisits: Visit[];
+  onLoad?: (count: number) => void;
+}) {
+  const { fetchCustomersInBounds } = useMapData();
+  const [unvisitedNearby, setUnvisitedNearby] = useState<Customer[]>([]);
+
+  const visitedIds = useMemo(
+    () => new Set(dateVisits.map(v => v.shop_id).filter(Boolean)),
+    [dateVisits]
+  );
+
+  useEffect(() => {
+    if (dateVisits.length === 0) { setUnvisitedNearby([]); onLoad?.(0); return; }
+    const pts = dateVisits.filter(v => v.lat && v.lng);
+    if (pts.length === 0) { setUnvisitedNearby([]); onLoad?.(0); return; }
+
+    const PAD = 0.05; // ~5 km corridor padding
+    const bbox = {
+      minLat: Math.min(...pts.map(v => v.lat)) - PAD,
+      maxLat: Math.max(...pts.map(v => v.lat)) + PAD,
+      minLng: Math.min(...pts.map(v => v.lng)) - PAD,
+      maxLng: Math.max(...pts.map(v => v.lng)) + PAD,
+    };
+
+    fetchCustomersInBounds(bbox, null)
+      .then(data => {
+        const unvisited = data.filter(c => !visitedIds.has(c.id));
+        setUnvisitedNearby(unvisited);
+        onLoad?.(unvisited.length);
+      })
+      .catch(console.error);
+  }, [dateVisits, fetchCustomersInBounds, visitedIds, onLoad]);
+
+  const formatDate = (d: string) =>
+    d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+  return (
+    <MarkerClusterGroup chunkedLoading maxClusterRadius={50}>
+      {unvisitedNearby.map(c => {
+        if (!c.lat || !c.lng) return null;
+        const normalized = normalizeCat(c.cat);
+        const color = CUSTOMER_COLOURS[normalized] || '#9E9E9E';
+        const radius = normalized === 'DISTRIBUTOR' ? 7
+          : normalized === 'KEY ACCOUNT' ? 6
+          : normalized === 'HUB' ? 5
+          : 4;
+        return (
+          <CircleMarker
+            key={`rn-${c.id}`}
+            center={[c.lat, c.lng] as LatLngTuple}
+            radius={radius}
+            pathOptions={{ color, fillColor: '#FFFFFF', fillOpacity: 0.9, weight: 1.5, dashArray: '4 3' }}
+          >
+            <Tooltip direction="top" offset={[0, -radius]}>
+              <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }}>
+                {c.name} · {c.cat} · Not visited this day
+              </span>
+            </Tooltip>
+            <Popup minWidth={200} maxWidth={260}>
+              <div style={{ fontFamily: 'Inter, system-ui, sans-serif', padding: '2px 0' }}>
+                <div style={{ fontWeight: 700, color: '#1E3A5F', fontSize: 13, marginBottom: 4 }}>{c.name}</div>
+                <div style={{ marginBottom: 6, display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ background: color, color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10 }}>{c.cat}</span>
+                  <span style={{ background: '#FEF2F2', color: '#EF4444', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10 }}>Not visited this day</span>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <tbody>
+                    {c.region && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Region</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.region}</td></tr>}
+                    {c.territory && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Territory</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.territory}</td></tr>}
+                    {c.channel && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Channel</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.channel}</td></tr>}
+                    <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Last visit</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_visit)}</td></tr>
+                    {c.phone && <tr><td style={{ color: '#6B7280', paddingRight: 8 }}>Phone</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.phone}</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </Popup>
+          </CircleMarker>
+        );
+      })}
+    </MarkerClusterGroup>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // All-time route lines per route_id
 // ─────────────────────────────────────────────────────────────────────────────
 function RoutesLayer({ repName, visits, repColor }: { repName: string | null; visits: Visit[]; repColor: string }) {
@@ -598,6 +688,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   const [dateVisits, setDateVisits] = useState<Visit[]>([]);
   const [visitsLoading, setVisitsLoading] = useState(false);
   const [zoom, setZoom] = useState(7);
+  const [nearbyUnvisitedCount, setNearbyUnvisitedCount] = useState(0);
 
   const repColor = useMemo(() => {
     if (!selectedRep) return '#C9963E';
@@ -634,6 +725,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         .catch(console.error);
     } else {
       setDateVisits([]);
+      setNearbyUnvisitedCount(0);
     }
   }, [selectedRep, repDateFrom, repDateTo, fetchRepVisitsForDateRange]);
 
@@ -667,8 +759,15 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
                 <><span style={{ opacity: 0.4 }}>·</span>
                 <span style={{ fontWeight: 400, opacity: 0.9, fontSize: 11 }}>
                   {repDateFrom === repDateTo ? repDateFrom : `${repDateFrom} → ${repDateTo}`}
-                  {' '}· {dateVisits.length} visits
-                </span></>
+                  {' '}· {dateVisits.length} visited
+                </span>
+                {nearbyUnvisitedCount > 0 && (
+                  <><span style={{ opacity: 0.4 }}>·</span>
+                  <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.9, color: '#FCA5A5' }}>
+                    {nearbyUnvisitedCount} nearby unvisited
+                  </span></>
+                )}
+                </>
               )}
             </>
           )}
@@ -684,8 +783,36 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         </div>
       )}
 
+      {/* Route mode legend */}
+      {selectedRep && hasDateFilter && (
+        <div style={{
+          position: 'absolute', bottom: 96, left: 12, zIndex: 1000,
+          background: 'rgba(255,255,255,0.96)', borderRadius: 8, padding: '8px 10px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.14)', border: '1px solid rgba(0,0,0,0.08)',
+          fontFamily: 'Inter, system-ui, sans-serif', pointerEvents: 'none', minWidth: 150,
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
+            Route Legend
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: repColor, display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 10, color: '#374151' }}>Visited this period</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px dashed #EF4444', display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ fontSize: 10, color: '#374151' }}>Nearby — not visited</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 14, height: 2, background: repColor, display: 'inline-block', flexShrink: 0, borderRadius: 1 }} />
+              <span style={{ fontSize: 10, color: '#374151' }}>Route line</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map legend */}
-      {layers.customerUniverse && (
+      {layers.customerUniverse && !hasDateFilter && (
         <div style={{
           position: 'absolute', bottom: 96, left: 12, zIndex: 1000,
           background: 'rgba(255,255,255,0.96)', borderRadius: 8, padding: '8px 10px',
@@ -744,6 +871,11 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         {/* Date-filtered day route — replaces all-time layers when date is set */}
         {selectedRep && hasDateFilter && (
           <DayRouteLayer visits={dateVisits} repColor={repColor} />
+        )}
+
+        {/* Unvisited customers in route corridor */}
+        {selectedRep && hasDateFilter && dateVisits.length > 0 && (
+          <RouteNeighbourhoodLayer dateVisits={dateVisits} onLoad={setNearbyUnvisitedCount} />
         )}
 
         {/* Unvisited outlets layer */}
