@@ -3,13 +3,13 @@ import { useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { supabase } from '../../lib/supabase';
 
-const COLOURS: Record<string, string> = {
+const CAT_COLOURS: Record<string, string> = {
   DISTRIBUTOR: '#C0392B',
-  'KEY ACCOUNT': '#7E57C2',
-  HUB: '#C9963E',
-  STOCKIST: '#E07B39',
+  'KEY ACCOUNT': '#8E44AD',
+  HUB: '#E67E22',
+  STOCKIST: '#D35400',
   SUPERMARKET: '#0E8C7A',
-  'GENERAL TRADE': '#9E9E9E',
+  'GENERAL TRADE': '#7F8C8D',
   'DISTRIBUTOR - FEEDS': '#E88080',
 };
 
@@ -25,65 +25,70 @@ function normCat(cat: string): string {
 }
 
 function getRadius(normalized: string): number {
-  if (normalized === 'DISTRIBUTOR') return 7;
-  if (normalized === 'KEY ACCOUNT') return 6;
-  if (normalized === 'HUB') return 6;
-  if (normalized === 'STOCKIST') return 5;
-  if (normalized === 'SUPERMARKET') return 5;
-  if (normalized === 'DISTRIBUTOR - FEEDS') return 3;
-  return 2; // GENERAL TRADE — small so it fills without overpowering
+  if (normalized === 'DISTRIBUTOR') return 8;
+  if (normalized === 'KEY ACCOUNT') return 7;
+  if (normalized === 'HUB') return 7;
+  if (normalized === 'STOCKIST') return 6;
+  if (normalized === 'SUPERMARKET') return 6;
+  if (normalized === 'DISTRIBUTOR - FEEDS') return 5;
+  return 4; // GENERAL TRADE — min 4 so every dot is visible at zoom 6
 }
 
 type CPoint = {
-  id: string; name: string; cat: string;
-  lat: number; lng: number; last_visit: string | null;
-  region: string; territory: string | null; channel: string | null;
+  id: string;
+  name: string;
+  cat: string;
+  lat: number;
+  lng: number;
+  visited: boolean;
 };
 
 interface Props {
   tierVisibility: Record<string, boolean>;
   activeTier: string | null;
   onCountChange?: (count: number) => void;
+  onLoadProgress?: (loaded: number, total: number | null) => void;
+  onTierCounts?: (counts: Record<string, number>) => void;
 }
 
-const MAX_CACHE = 30;
+// Module-level singleton — data survives toggle off/on within the same session
+const _globalCache: {
+  customers: CPoint[];
+  loaded: boolean;
+  loading: boolean;
+  pendingCallbacks: Array<() => void>;
+} = {
+  customers: [],
+  loaded: false,
+  loading: false,
+  pendingCallbacks: [],
+};
 
-export default function CustomerUniverseLayer({ tierVisibility, activeTier, onCountChange }: Props) {
+export default function CustomerUniverseLayer({
+  tierVisibility,
+  activeTier,
+  onCountChange,
+  onLoadProgress,
+  onTierCounts,
+}: Props) {
   const map = useMap();
 
-  // Stable refs — updated every render so callbacks never go stale
+  // Stable refs — callbacks always read the latest props without stale closures
   const tierVisRef = useRef(tierVisibility);
   tierVisRef.current = tierVisibility;
   const activeTierRef = useRef(activeTier);
   activeTierRef.current = activeTier;
   const onCountRef = useRef(onCountChange);
   onCountRef.current = onCountChange;
+  const onProgressRef = useRef(onLoadProgress);
+  onProgressRef.current = onLoadProgress;
+  const onTierCountsRef = useRef(onTierCounts);
+  onTierCountsRef.current = onTierCounts;
 
   const layerGroup = useRef<L.LayerGroup | null>(null);
+  // Single shared canvas for all customer markers — one paint call
   const renderer = useRef(L.canvas({ padding: 0.5 }));
 
-  // Current viewport batch — replaced on each fetch (no accumulation)
-  const currentBatch = useRef<CPoint[]>([]);
-
-  // LRU viewport cache: cacheKey → CPoint[]
-  const vpCache = useRef<Map<string, CPoint[]>>(new Map());
-  const lruOrder = useRef<string[]>([]);
-  const isFetching = useRef(false);
-  const needsUpdate = useRef(false);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // 0.5-degree tile resolution to maximise cache hits across similar viewports
-  const cacheKey = useCallback((bounds: L.LatLngBounds) => {
-    const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-    return [
-      Math.floor(sw.lat * 2) / 2,
-      Math.floor(sw.lng * 2) / 2,
-      Math.ceil(ne.lat * 2) / 2,
-      Math.ceil(ne.lng * 2) / 2,
-    ].join(',');
-  }, []);
-
-  // ── Pure canvas render — no React, no SVG, no DOM per-marker ────────────────
   const renderLayer = useCallback(() => {
     if (!layerGroup.current) {
       layerGroup.current = L.layerGroup().addTo(map);
@@ -92,41 +97,42 @@ export default function CustomerUniverseLayer({ tierVisibility, activeTier, onCo
     }
 
     const tv = tierVisRef.current;
+    const at = activeTierRef.current ? normCat(activeTierRef.current) : null;
     let count = 0;
 
-    for (const c of currentBatch.current) {
-      if (!c.lat || !c.lng) continue;
+    for (const c of _globalCache.customers) {
       const normalized = normCat(c.cat);
+      if (at && normalized !== at) continue;
       if (!(tv[normalized] ?? true)) continue;
 
-      const color = COLOURS[normalized] || '#9E9E9E';
-      const isVisited = !!c.last_visit;
+      const color = CAT_COLOURS[normalized] || '#7F8C8D';
       const radius = getRadius(normalized);
 
       const cm = L.circleMarker([c.lat, c.lng], {
         renderer: renderer.current,
         radius,
-        fillColor: isVisited ? color : '#FFFFFF',
-        fillOpacity: isVisited ? 0.85 : 0.6,
+        fillColor: c.visited ? color : '#FFFFFF',
+        fillOpacity: c.visited ? 0.85 : 0.25,
         color,
-        weight: isVisited ? 1 : 1.5,
-        dashArray: isVisited ? undefined : '3 3',
+        weight: c.visited ? 1 : 1.5,
+        dashArray: c.visited ? undefined : '4,3',
       });
 
-      // Lazy popup — only created on click, not on render
-      const name = c.name, cat = c.cat, region = c.region, territory = c.territory, channel = c.channel;
-      cm.bindPopup(() => `
-        <div style="font-family:Inter,system-ui,sans-serif;padding:2px 0;min-width:180px">
-          <div style="font-weight:700;color:#1E3A5F;font-size:13px;margin-bottom:4px">${name}</div>
-          <span style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">${cat}</span>
-          <span style="background:${isVisited ? '#DCFCE7' : '#FEF2F2'};color:${isVisited ? '#16A34A' : '#EF4444'};font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;margin-left:4px">${isVisited ? 'Visited' : 'Never visited'}</span>
-          <div style="font-size:11px;margin-top:6px">
-            ${region ? `<div style="color:#6B7280">Region: <strong style="color:#1E3A5F">${region}</strong></div>` : ''}
-            ${territory ? `<div style="color:#6B7280">Territory: <strong style="color:#1E3A5F">${territory}</strong></div>` : ''}
-            ${channel ? `<div style="color:#6B7280">Channel: <strong style="color:#1E3A5F">${channel}</strong></div>` : ''}
+      const { name, cat, visited } = c;
+      cm.bindPopup(
+        () => `
+          <div style="font-family:Inter,system-ui,sans-serif;padding:2px 0;min-width:160px">
+            <div style="font-weight:700;color:#1E3A5F;font-size:13px;margin-bottom:4px">${name}</div>
+            <span style="background:${color};color:#fff;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px">${cat}</span>
+            <div style="font-size:11px;color:#6B7280;margin-top:6px">
+              ${visited
+                ? '<span style="color:#16A34A">&#10003; Visited</span>'
+                : '<span style="color:#EF4444">&#9711; Never visited</span>'}
+            </div>
           </div>
-        </div>
-      `, { maxWidth: 220 });
+        `,
+        { maxWidth: 220 },
+      );
 
       layerGroup.current.addLayer(cm);
       count++;
@@ -135,93 +141,111 @@ export default function CustomerUniverseLayer({ tierVisibility, activeTier, onCo
     onCountRef.current?.(count);
   }, [map]);
 
-  // ── Fetch viewport data → cache → render ────────────────────────────────────
-  const fetchAndRender = useCallback(async () => {
-    if (isFetching.current) { needsUpdate.current = true; return; }
-    isFetching.current = true;
-    needsUpdate.current = false;
+  const loadAll = useCallback(async () => {
+    // Data already in cache — render immediately, no network
+    if (_globalCache.loaded) {
+      onProgressRef.current?.(_globalCache.customers.length, _globalCache.customers.length);
+      renderLayer();
+      // Report per-tier counts
+      const counts: Record<string, number> = {};
+      for (const c of _globalCache.customers) {
+        const n = normCat(c.cat);
+        counts[n] = (counts[n] || 0) + 1;
+      }
+      onTierCountsRef.current?.(counts);
+      return;
+    }
+
+    // Another mount is already loading — queue render for when it finishes
+    if (_globalCache.loading) {
+      _globalCache.pendingCallbacks.push(() => {
+        onProgressRef.current?.(_globalCache.customers.length, _globalCache.customers.length);
+        renderLayer();
+        const counts: Record<string, number> = {};
+        for (const c of _globalCache.customers) {
+          const n = normCat(c.cat);
+          counts[n] = (counts[n] || 0) + 1;
+        }
+        onTierCountsRef.current?.(counts);
+      });
+      return;
+    }
+
+    _globalCache.loading = true;
+    onProgressRef.current?.(0, null);
 
     try {
-      const bounds = map.getBounds();
-      const key = cacheKey(bounds);
+      const PAGE = 1000;
+      let from = 0;
+      const raw: Array<{ id: string; name: string; cat: string; lat: number; lng: number; last_visit: string | null }> = [];
 
-      if (vpCache.current.has(key)) {
-        currentBatch.current = vpCache.current.get(key)!;
-      } else {
-        const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
-        const latPad = (ne.lat - sw.lat) * 0.15;
-        const lngPad = (ne.lng - sw.lng) * 0.15;
-        const at = activeTierRef.current;
-        const dbCat = at === 'MODERN TRADE' ? 'SUPERMARKET' : at;
-
-        let q = supabase
+      while (true) {
+        const { data, error } = await supabase
           .from('customers')
-          .select('id,name,cat,lat,lng,last_visit,region,territory,channel')
-          .gte('lat', sw.lat - latPad).lte('lat', ne.lat + latPad)
-          .gte('lng', sw.lng - lngPad).lte('lng', ne.lng + lngPad)
-          .not('lat', 'is', null).not('lng', 'is', null)
-          .limit(15000);
+          .select('id,name,cat,lat,lng,last_visit')
+          .not('lat', 'is', null)
+          .not('lng', 'is', null)
+          .range(from, from + PAGE - 1);
 
-        if (dbCat) q = (q as typeof q).eq('cat', dbCat);
-
-        const { data, error } = await q;
-        if (error || !data) return;
-
-        const batch = data as unknown as CPoint[];
-        currentBatch.current = batch;
-
-        // LRU eviction at 30 tiles
-        if (lruOrder.current.length >= MAX_CACHE) {
-          const evicted = lruOrder.current.shift()!;
-          vpCache.current.delete(evicted);
-        }
-        vpCache.current.set(key, batch);
-        lruOrder.current.push(key);
+        if (error || !data || data.length === 0) break;
+        raw.push(...(data as typeof raw));
+        from += PAGE;
+        onProgressRef.current?.(raw.length, null);
+        if (data.length < PAGE) break;
       }
 
-      renderLayer();
+      _globalCache.customers = raw.map(c => ({
+        id: c.id,
+        name: c.name,
+        cat: c.cat,
+        lat: c.lat,
+        lng: c.lng,
+        visited: !!c.last_visit,
+      }));
+      _globalCache.loaded = true;
     } finally {
-      isFetching.current = false;
-      if (needsUpdate.current) fetchAndRender();
+      _globalCache.loading = false;
     }
-  }, [map, cacheKey, renderLayer]);
 
-  const debouncedFetch = useCallback(() => {
-    clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(fetchAndRender, 350);
-  }, [fetchAndRender]);
+    // Report final count + tier breakdown
+    const total = _globalCache.customers.length;
+    onProgressRef.current?.(total, total);
+    const counts: Record<string, number> = {};
+    for (const c of _globalCache.customers) {
+      const n = normCat(c.cat);
+      counts[n] = (counts[n] || 0) + 1;
+    }
+    onTierCountsRef.current?.(counts);
 
-  // Tier toggle: instant re-render from existing batch — no network
+    renderLayer();
+
+    // Wake up any queued instances
+    for (const cb of _globalCache.pendingCallbacks) cb();
+    _globalCache.pendingCallbacks = [];
+  }, [renderLayer]);
+
+  // Tier visibility toggle — instant re-render from cache, zero network
   useEffect(() => {
-    if (currentBatch.current.length === 0) return;
+    if (!_globalCache.loaded) return;
     renderLayer();
   }, [tierVisibility, renderLayer]);
 
-  // activeTier change: flush cache + re-fetch with new server filter
+  // activeTier change — re-render from cache
   useEffect(() => {
-    vpCache.current.clear();
-    lruOrder.current = [];
-    currentBatch.current = [];
-    if (layerGroup.current) layerGroup.current.clearLayers();
-    onCountRef.current?.(0);
-    fetchAndRender();
-  }, [activeTier, fetchAndRender]);
+    if (!_globalCache.loaded) return;
+    renderLayer();
+  }, [activeTier, renderLayer]);
 
-  // Mount: initial fetch + event listeners; unmount: clean up layer + listeners
+  // Mount: load (or restore from cache) and attach to map
   useEffect(() => {
-    fetchAndRender();
-    map.on('moveend', debouncedFetch);
-    map.on('zoomend', debouncedFetch);
+    loadAll();
     return () => {
-      clearTimeout(debounceTimer.current);
-      map.off('moveend', debouncedFetch);
-      map.off('zoomend', debouncedFetch);
       if (layerGroup.current) {
         map.removeLayer(layerGroup.current);
         layerGroup.current = null;
       }
     };
-  }, [map, fetchAndRender, debouncedFetch]);
+  }, [map, loadAll]);
 
   return null;
 }

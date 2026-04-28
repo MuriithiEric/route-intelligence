@@ -691,6 +691,9 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   const [zoom, setZoom] = useState(7);
   const [nearbyUnvisitedCount, setNearbyUnvisitedCount] = useState(0);
   const [universeCount, setUniverseCount] = useState<number | null>(null);
+  const [universeLoading, setUniverseLoading] = useState(false);
+  const [universeLoadedCount, setUniverseLoadedCount] = useState(0);
+  const [universeTierCounts, setUniverseTierCounts] = useState<Record<string, number>>({});
 
   const repColor = useMemo(() => {
     if (!selectedRep) return '#C9963E';
@@ -731,9 +734,13 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
     }
   }, [selectedRep, repDateFrom, repDateTo, fetchRepVisitsForDateRange]);
 
-  // Reset universe count when layer is toggled off
+  // Reset universe states when layer is toggled off
   useEffect(() => {
-    if (!layers.customerUniverse) setUniverseCount(null);
+    if (!layers.customerUniverse) {
+      setUniverseCount(null);
+      setUniverseLoading(false);
+      setUniverseLoadedCount(0);
+    }
   }, [layers.customerUniverse]);
 
   const handleRepClick = useCallback((rep: TTMSummary) => {
@@ -829,14 +836,22 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
           <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>
             Map Legend
           </div>
-          {Object.entries(CUSTOMER_COLOURS).map(([key, color]) => (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: '#374151' }}>
-                {key === 'SUPERMARKET' ? 'Modern Trade' : key === 'GENERAL TRADE' ? 'General Trade' : key === 'DISTRIBUTOR - FEEDS' ? 'Dist. Feeds' : key.charAt(0) + key.slice(1).toLowerCase()}
-              </span>
-            </div>
-          ))}
+          {Object.entries(CUSTOMER_COLOURS).map(([key, color]) => {
+            const label = key === 'SUPERMARKET' ? 'Modern Trade'
+              : key === 'GENERAL TRADE' ? 'General Trade'
+              : key === 'DISTRIBUTOR - FEEDS' ? 'Dist. Feeds'
+              : key.charAt(0) + key.slice(1).toLowerCase();
+            const count = universeTierCounts[key];
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: '#374151', flex: 1 }}>{label}</span>
+                {count !== undefined && (
+                  <span style={{ fontSize: 9, color: '#9CA3AF', fontWeight: 600 }}>{count.toLocaleString()}</span>
+                )}
+              </div>
+            );
+          })}
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 4, paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#9CA3AF', display: 'inline-block' }} />
@@ -859,15 +874,33 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
           fontFamily: 'Inter, system-ui, sans-serif', color: '#1E3A5F',
           boxShadow: '0 1px 6px rgba(0,0,0,0.12)',
           border: '1px solid rgba(0,0,0,0.08)', pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          {universeCount === null ? 'Loading outlets…' : `${universeCount.toLocaleString()} outlets`}
+          {universeLoading ? (
+            <>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C9963E', display: 'inline-block', animation: 'pulse 1s infinite' }} />
+              <span>Loading… {universeLoadedCount.toLocaleString()}</span>
+            </>
+          ) : universeCount !== null ? (
+            <>
+              <span style={{ color: '#16A34A' }}>&#10003;</span>
+              <span>{universeCount.toLocaleString()} outlets</span>
+            </>
+          ) : (
+            <span>Loading outlets…</span>
+          )}
         </div>
       )}
 
       <LeafletMap center={CENTER} zoom={7} style={{ width: '100%', height: '100%' }} zoomControl preferCanvas>
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          key={layers.customerUniverse ? 'carto' : 'osm'}
+          url={layers.customerUniverse
+            ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
+          attribution={layers.customerUniverse
+            ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
         />
 
         <MapEventListener onZoomChange={setZoom} />
@@ -881,7 +914,17 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
           <CustomerUniverseLayer
             activeTier={layers.customerTier}
             tierVisibility={layers.tierVisibility}
-            onCountChange={count => { setUniverseCount(count); }}
+            onCountChange={setUniverseCount}
+            onLoadProgress={(loaded, total) => {
+              if (total === null) {
+                setUniverseLoading(true);
+                setUniverseLoadedCount(loaded);
+              } else {
+                setUniverseLoading(false);
+                setUniverseLoadedCount(loaded);
+              }
+            }}
+            onTierCounts={setUniverseTierCounts}
           />
         )}
 
