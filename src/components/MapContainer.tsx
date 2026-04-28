@@ -865,22 +865,10 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
       )}
 
       <LeafletMap center={CENTER} zoom={7} style={{ width: '100%', height: '100%' }} zoomControl preferCanvas>
-        {/* CartoDB light basemap when customer universe is on — makes colored dots pop */}
-        {layers.customerUniverse ? (
-          <TileLayer
-            key="carto-light"
-            url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            subdomains="abcd"
-            maxZoom={19}
-          />
-        ) : (
-          <TileLayer
-            key="osm"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-        )}
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
 
         <MapEventListener onZoomChange={setZoom} />
         <MapFlyController ttmSummary={ttmSummary} dateVisits={dateVisits} hasDateFilter={hasDateFilter} />
