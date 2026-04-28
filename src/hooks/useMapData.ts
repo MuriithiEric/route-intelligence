@@ -3,6 +3,56 @@ import { supabase } from '../lib/supabase';
 import { cachedQuery } from './useSupabaseData';
 import type { Visit, Customer, RepProfile, DailyActivity, VisitFrequency, ShopVisitRow, RouteSummary } from '../types';
 
+// ─── Module-level full-dataset cache ─────────────────────────────────────────
+// Loads ALL GPS-valid customers once per session and caches the result.
+// Subsequent calls return the cached promise immediately.
+let _allCustomersPromise: Promise<Customer[]> | null = null;
+
+export function loadAllCustomers(
+  onProgress?: (loaded: number, total: number) => void
+): Promise<Customer[]> {
+  if (_allCustomersPromise) return _allCustomersPromise;
+
+  _allCustomersPromise = (async (): Promise<Customer[]> => {
+    // 1. Get total count of GPS-valid customers
+    const { count, error: countErr } = await supabase
+      .from('customers')
+      .select('*', { count: 'exact', head: true })
+      .not('lat', 'is', null)
+      .not('lng', 'is', null);
+
+    if (countErr || !count) return [];
+
+    const PAGE = 1000;
+    const pages = Math.ceil(count / PAGE);
+    const PARALLEL = 10; // requests per round
+    const all: Customer[] = [];
+
+    for (let i = 0; i < pages; i += PARALLEL) {
+      const batchLen = Math.min(PARALLEL, pages - i);
+      const results = await Promise.all(
+        Array.from({ length: batchLen }, (_, j) => {
+          const from = (i + j) * PAGE;
+          return supabase
+            .from('customers')
+            .select('id,name,cat,tier,region,territory,lat,lng,last_visit,last_sale,phone,loc,channel')
+            .not('lat', 'is', null)
+            .not('lng', 'is', null)
+            .range(from, from + PAGE - 1);
+        })
+      );
+      for (const r of results) {
+        if (r.data) all.push(...(r.data as unknown as Customer[]));
+      }
+      onProgress?.(all.length, count);
+    }
+
+    return all;
+  })();
+
+  return _allCustomersPromise;
+}
+
 interface BoundingBox {
   minLat: number; maxLat: number;
   minLng: number; maxLng: number;

@@ -17,7 +17,7 @@ import 'react-leaflet-cluster/dist/assets/MarkerCluster.css';
 import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
 
 import { useAppContext, useLayers } from '../context/AppContext';
-import { useMapData } from '../hooks/useMapData';
+import { useMapData, loadAllCustomers } from '../hooks/useMapData';
 import type { TTMSummary, Customer, Visit, RouteSummary } from '../types';
 import { GROUP_COLOURS } from '../types';
 
@@ -66,114 +66,165 @@ function useDebounce(fn: () => void, delay: number) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Customer Universe Layer — viewport-bounded, multi-tier, visited/unvisited
+// Custom cluster icon — colorful pill with count
+// ─────────────────────────────────────────────────────────────────────────────
+function makeClusterIcon(cluster: { getChildCount(): number }) {
+  const count = cluster.getChildCount();
+  const size = count < 50 ? 34 : count < 200 ? 40 : count < 1000 ? 46 : 52;
+  const label = count >= 10000 ? `${Math.round(count / 1000)}k`
+    : count >= 1000 ? `${(count / 1000).toFixed(1)}k`
+    : String(count);
+  return L.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:rgba(30,58,95,0.88);
+      color:#fff;border:2.5px solid rgba(255,255,255,0.85);
+      display:flex;align-items:center;justify-content:center;
+      font-family:'Inter',system-ui,sans-serif;font-size:${size < 40 ? 11 : 12}px;
+      font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,0.32);
+      letter-spacing:-0.3px;
+    ">${label}</div>`,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Customer Universe Layer — loads ALL 80k customers once, cached for session
 // ─────────────────────────────────────────────────────────────────────────────
 function CustomerUniverseLayer({
-  activeTier,
   tierVisibility,
 }: {
   activeTier: string | null;
   tierVisibility: Record<string, boolean>;
 }) {
-  const { fetchCustomersInBounds } = useMapData();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const map = useMap();
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'done'>('idle');
+  const [loadCount, setLoadCount] = useState(0);
 
-  const loadCustomers = useCallback(async () => {
-    const zoom = map.getZoom();
-    const minZoom = activeTier ? 7 : 9;
-    if (zoom < minZoom) { setCustomers([]); return; }
+  useEffect(() => {
+    setLoadState('loading');
+    loadAllCustomers((loaded, _total) => setLoadCount(loaded))
+      .then(data => {
+        setAllCustomers(data);
+        setLoadState('done');
+      })
+      .catch(err => {
+        console.error('CustomerUniverseLayer load error:', err);
+        setLoadState('done');
+      });
+  }, []);
 
-    const bounds = map.getBounds();
-    try {
-      // Server-side single-tier filter when only one tier is selected; else fetch all
-      const data = await fetchCustomersInBounds({
-        minLat: bounds.getSouth(),
-        maxLat: bounds.getNorth(),
-        minLng: bounds.getWest(),
-        maxLng: bounds.getEast(),
-      }, activeTier);
-      setCustomers(data);
-    } catch (err) {
-      console.error('CustomerUniverseLayer load error:', err);
-    }
-  }, [map, fetchCustomersInBounds, activeTier]);
-
-  const debouncedLoad = useDebounce(loadCustomers, 500);
-
-  useEffect(() => { loadCustomers(); }, [loadCustomers]);
-  useMapEvents({ moveend: debouncedLoad, zoomend: debouncedLoad });
+  // Visible customers after tier filter — memoised so filter only runs when inputs change
+  const visible = useMemo(() => {
+    return allCustomers.filter(c => {
+      if (!c.lat || !c.lng) return false;
+      const normalized = normalizeCat(c.cat);
+      return tierVisibility[normalized] !== false;
+    });
+  }, [allCustomers, tierVisibility]);
 
   const formatDate = (d: string) =>
     d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 
   return (
-    <MarkerClusterGroup chunkedLoading>
-      {customers.map(c => {
-        if (!c.lat || !c.lng) return null;
+    <>
+      {/* Loading overlay */}
+      {loadState === 'loading' && (
+        <div style={{
+          position: 'fixed', bottom: 80, right: 16, zIndex: 2000,
+          background: 'rgba(30,58,95,0.92)', color: '#fff',
+          fontFamily: 'Inter, system-ui, sans-serif', fontSize: 12, fontWeight: 600,
+          padding: '8px 14px', borderRadius: 20,
+          boxShadow: '0 2px 12px rgba(0,0,0,0.28)',
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <div style={{
+            width: 14, height: 14, borderRadius: '50%',
+            border: '2px solid rgba(255,255,255,0.3)',
+            borderTopColor: '#fff',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          Loading customers… {loadCount > 0 ? `${loadCount.toLocaleString()}` : ''}
+        </div>
+      )}
 
-        const normalized = normalizeCat(c.cat);
+      <MarkerClusterGroup
+        chunkedLoading
+        iconCreateFunction={makeClusterIcon}
+        maxClusterRadius={60}
+        disableClusteringAtZoom={15}
+        animate
+        animateAddingMarkers={false}
+        showCoverageOnHover={false}
+        spiderfyOnMaxZoom
+        zoomToBoundsOnClick
+      >
+        {visible.map(c => {
+          const normalized = normalizeCat(c.cat);
+          const color = CUSTOMER_COLOURS[normalized] || '#9E9E9E';
+          const isVisited = !!c.last_visit;
 
-        // Client-side tier visibility filter
-        if (!(tierVisibility[normalized] ?? true)) return null;
+          const radius = normalized === 'DISTRIBUTOR' ? 9
+            : normalized === 'KEY ACCOUNT' ? 7
+            : normalized === 'HUB' ? 6
+            : normalized === 'SUPERMARKET' ? 6
+            : normalized === 'STOCKIST' ? 5
+            : normalized === 'DISTRIBUTOR - FEEDS' ? 5
+            : 4;
 
-        const color = CUSTOMER_COLOURS[normalized] || '#9E9E9E';
-        const isVisited = !!c.last_visit;
+          const pathOptions = isVisited
+            ? { color, fillColor: color, fillOpacity: 0.85, weight: 1.2 }
+            : { color, fillColor: '#FFFFFF', fillOpacity: 0.95, weight: 1.8, dashArray: '4 3' };
 
-        const radius = normalized === 'DISTRIBUTOR' ? 8
-          : normalized === 'KEY ACCOUNT' ? 6
-          : normalized === 'HUB' ? 6
-          : normalized === 'SUPERMARKET' ? 5
-          : normalized === 'STOCKIST' ? 4
-          : 3;
-
-        const pathOptions = isVisited
-          ? { color, fillColor: color, fillOpacity: 0.82, weight: 1 }
-          : { color, fillColor: '#FFFFFF', fillOpacity: 0.9, weight: 1.5, dashArray: '4 3' };
-
-        return (
-          <CircleMarker
-            key={c.id}
-            center={[c.lat, c.lng] as LatLngTuple}
-            radius={radius}
-            pathOptions={pathOptions}
-          >
-            <Tooltip direction="top" offset={[0, -radius]}>
-              <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }}>
-                {c.name} · {c.region}
-                {!isVisited && ' · Never visited'}
-              </span>
-            </Tooltip>
-            <Popup minWidth={200} maxWidth={260}>
-              <div style={{ fontFamily: 'Inter, system-ui, sans-serif', padding: '2px 0' }}>
-                <div style={{ fontWeight: 700, color: '#1E3A5F', fontSize: 13, marginBottom: 4 }}>{c.name}</div>
-                <div style={{ marginBottom: 6, display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <span style={{ background: color, color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10 }}>
-                    {c.cat}
-                  </span>
-                  {!isVisited && (
-                    <span style={{ background: '#FEF2F2', color: '#EF4444', fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10 }}>
-                      Never visited
+          return (
+            <CircleMarker
+              key={c.id}
+              center={[c.lat, c.lng] as LatLngTuple}
+              radius={radius}
+              pathOptions={pathOptions}
+            >
+              <Tooltip direction="top" offset={[0, -radius]}>
+                <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }}>
+                  <strong>{c.name}</strong> · {c.region}
+                  {!isVisited && <span style={{ color: '#EF4444' }}> · Never visited</span>}
+                </span>
+              </Tooltip>
+              <Popup minWidth={210} maxWidth={270}>
+                <div style={{ fontFamily: 'Inter, system-ui, sans-serif', padding: '2px 0' }}>
+                  <div style={{ fontWeight: 700, color: '#1E3A5F', fontSize: 13, marginBottom: 5 }}>{c.name}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+                    <span style={{ background: color, color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10 }}>
+                      {normalized === 'SUPERMARKET' ? 'Modern Trade' : normalized}
                     </span>
-                  )}
+                    {!isVisited && (
+                      <span style={{ background: '#FEF2F2', color: '#DC2626', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10 }}>
+                        Never visited
+                      </span>
+                    )}
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                    <tbody>
+                      {c.region && <tr><td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Region</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.region}</td></tr>}
+                      {c.territory && <tr><td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Territory</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.territory}</td></tr>}
+                      {c.channel && <tr><td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Channel</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.channel}</td></tr>}
+                      {c.loc && <tr><td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Location</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.loc}</td></tr>}
+                      <tr>
+                        <td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Last visit</td>
+                        <td style={{ color: isVisited ? '#1E3A5F' : '#EF4444', fontWeight: 600 }}>{formatDate(c.last_visit)}</td>
+                      </tr>
+                      {c.last_sale && <tr><td style={{ color: '#6B7280', paddingRight: 10, paddingBottom: 3, whiteSpace: 'nowrap' }}>Last sale</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_sale)}</td></tr>}
+                      {c.phone && <tr><td style={{ color: '#6B7280', paddingRight: 10, whiteSpace: 'nowrap' }}>Phone</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.phone}</td></tr>}
+                    </tbody>
+                  </table>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                  <tbody>
-                    {c.region && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Region</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.region}</td></tr>}
-                    {c.territory && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Territory</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.territory}</td></tr>}
-                    {c.channel && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Channel</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.channel}</td></tr>}
-                    {c.loc && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Location</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.loc}</td></tr>}
-                    <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Last visit</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_visit)}</td></tr>
-                    {c.last_sale && <tr><td style={{ color: '#6B7280', paddingRight: 8, paddingBottom: 3 }}>Last sale</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{formatDate(c.last_sale)}</td></tr>}
-                    {c.phone && <tr><td style={{ color: '#6B7280', paddingRight: 8 }}>Phone</td><td style={{ color: '#1E3A5F', fontWeight: 600 }}>{c.phone}</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </Popup>
-          </CircleMarker>
-        );
-      })}
-    </MarkerClusterGroup>
+              </Popup>
+            </CircleMarker>
+          );
+        })}
+      </MarkerClusterGroup>
+    </>
   );
 }
 
