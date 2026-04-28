@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppContext, useLayers } from '../context/AppContext';
 import type { Tier, CustomerCategoryCounts } from '../types';
-import { TIER_COLOURS } from '../types';
+import { TIER_COLOURS, DEFAULT_TIER_VISIBILITY } from '../types';
 
 const TIER_DEFS: Array<{ key: Tier; label: string }> = [
   { key: 'DISTRIBUTOR',   label: 'BIDCO Dist.'   },
@@ -23,11 +23,20 @@ export default function UniverseBreakdown({ customerCounts }: UniverseBreakdownP
   const handleTierClick = (tier: Tier) => {
     const next = filters.activeTier === tier ? null : tier;
     setFilters(prev => ({ ...prev, activeTier: next }));
-    setLayers(prev => ({
-      ...prev,
-      customerUniverse: next !== null,
-      customerTier: next,
-    }));
+    setLayers(prev => {
+      // Map Tier label → DB cat key used in tierVisibility
+      const catKey = next === 'MODERN TRADE' ? 'SUPERMARKET' : next;
+      // When a single tier is activated: check only that tier; else restore all
+      const tierVisibility = next
+        ? Object.fromEntries(Object.keys(DEFAULT_TIER_VISIBILITY).map(k => [k, k === catKey]))
+        : { ...DEFAULT_TIER_VISIBILITY };
+      return {
+        ...prev,
+        customerUniverse: next !== null,
+        customerTier: next,
+        tierVisibility,
+      };
+    });
   };
 
   return (

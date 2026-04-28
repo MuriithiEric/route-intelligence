@@ -205,6 +205,7 @@ function Dashboard({ isTourCompleted, onTourComplete, onSignOut, user }: Dashboa
               fieldStaffCount={ttmSummary.length || undefined}
               customerCount={customerCounts?.total || undefined}
               routeCount={routeCount ?? undefined}
+              customerCounts={customerCounts}
             />
           </Suspense>
         </div>

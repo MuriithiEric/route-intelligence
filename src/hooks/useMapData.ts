@@ -227,9 +227,47 @@ export function useMapData() {
     });
   }, []);
 
+  const fetchRepVisitsForDateRange = useCallback(async (
+    repName: string,
+    dateFrom: string,
+    dateTo: string
+  ): Promise<Visit[]> => {
+    const key = `visits:rep:${repName}:${dateFrom}:${dateTo}`;
+    return cachedQuery<Visit[]>(key, async () => {
+      const { data, error } = await supabase
+        .from('visits')
+        .select('*')
+        .eq('rep_name', repName)
+        .gte('check_in', `${dateFrom}T00:00:00`)
+        .lte('check_in', `${dateTo}T23:59:59`)
+        .order('check_in', { ascending: true })
+        .limit(500);
+      if (error) throw error;
+      return data || [];
+    });
+  }, []);
+
+  const fetchUnvisitedInBounds = useCallback(async (
+    bounds: BoundingBox
+  ): Promise<Customer[]> => {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id,name,cat,tier,region,loc,channel,territory,lat,lng,last_visit,last_sale,phone')
+      .gte('lat', bounds.minLat)
+      .lte('lat', bounds.maxLat)
+      .gte('lng', bounds.minLng)
+      .lte('lng', bounds.maxLng)
+      .is('last_visit', null)
+      .limit(3000);
+    if (error) throw error;
+    return (data || []) as Customer[];
+  }, []);
+
   return {
     fetchCustomersInBounds,
     fetchRepVisits,
+    fetchRepVisitsForDateRange,
+    fetchUnvisitedInBounds,
     fetchCategoryVisits,
     fetchRepProfile,
     fetchRepDailyActivity,

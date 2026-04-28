@@ -191,11 +191,23 @@ export interface AppData {
   loading: boolean;
 }
 
+export const DEFAULT_TIER_VISIBILITY: Record<string, boolean> = {
+  DISTRIBUTOR: true,
+  'KEY ACCOUNT': true,
+  HUB: true,
+  STOCKIST: true,
+  SUPERMARKET: true,
+  'GENERAL TRADE': true,
+  'DISTRIBUTOR - FEEDS': true,
+};
+
 export interface LayerState {
   fieldStaff: boolean;
   customerUniverse: boolean;
   customerTier: Tier | null;
   routes: boolean;
+  tierVisibility: Record<string, boolean>;
+  showUnvisited: boolean;
 }
 
 export interface ShopVisitRow {

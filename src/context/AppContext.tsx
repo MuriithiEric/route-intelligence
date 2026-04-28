@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
-import type { FilterState, LayerState, Tier, Region } from '../types';
+import type { FilterState, LayerState, Region } from '../types';
+import { DEFAULT_TIER_VISIBILITY } from '../types';
 
 export type RepStatusFilter = 'all' | 'active' | 'inactive';
 
@@ -32,9 +33,14 @@ interface AppContextValue {
   // Universe panel
   showUniversePanel: boolean;
   setShowUniversePanel: React.Dispatch<React.SetStateAction<boolean>>;
-  // Map fly-to — used by distributor region filter
+  // Map fly-to
   mapFlyTo: MapFlyTarget | null;
   setMapFlyTo: React.Dispatch<React.SetStateAction<MapFlyTarget | null>>;
+  // Rep date filter — drives both RepActivityPanel and the map day-route layer
+  repDateFrom: string | null;
+  repDateTo: string | null;
+  setRepDateFrom: React.Dispatch<React.SetStateAction<string | null>>;
+  setRepDateTo: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 const defaultFilters: FilterState = {
@@ -52,6 +58,8 @@ const defaultLayers: LayerState = {
   customerUniverse: false,
   customerTier: null,
   routes: true,
+  tierVisibility: { ...DEFAULT_TIER_VISIBILITY },
+  showUnvisited: false,
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -67,11 +75,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [compareRep2, setCompareRep2] = useState<string | null>(null);
   const [showUniversePanel, setShowUniversePanel] = useState(false);
   const [mapFlyTo, setMapFlyTo] = useState<MapFlyTarget | null>(null);
+  const [repDateFrom, setRepDateFrom] = useState<string | null>(null);
+  const [repDateTo, setRepDateTo] = useState<string | null>(null);
 
   const setSelectedRep = useCallback((rep: string | null) => {
     setSelectedRepState(rep);
     if (!rep) {
       setFilters(prev => ({ ...prev, fieldStaff: null }));
+      setRepDateFrom(null);
+      setRepDateTo(null);
     } else {
       setFilters(prev => ({ ...prev, fieldStaff: rep }));
     }
@@ -84,6 +96,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCompareMode(false);
     setCompareRep1(null);
     setCompareRep2(null);
+    setRepDateFrom(null);
+    setRepDateTo(null);
   }, []);
 
   const value = useMemo(() => ({
@@ -108,8 +122,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setShowUniversePanel,
     mapFlyTo,
     setMapFlyTo,
+    repDateFrom,
+    repDateTo,
+    setRepDateFrom,
+    setRepDateTo,
   }), [filters, layers, selectedRep, selectedShop, setSelectedRep, clearFilters, repStatusFilter,
-       compareMode, compareRep1, compareRep2, showUniversePanel, mapFlyTo]);
+       compareMode, compareRep1, compareRep2, showUniversePanel, mapFlyTo,
+       repDateFrom, repDateTo]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

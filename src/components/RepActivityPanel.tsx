@@ -34,7 +34,7 @@ function TierDot({ tier }: { tier: string | null }) {
 const PAGE_SIZE = 100;
 
 export default function RepActivityPanel({ repName, repData, onClose }: RepActivityPanelProps) {
-  const { setFilters } = useAppContext();
+  const { setFilters, setRepDateFrom, setRepDateTo } = useAppContext();
   const { fetchRepDailyActivity, fetchRepShopVisits, fetchRepRoutes, fetchRepProfile, fetchAllRepShopVisitsForCSV } = useMapData();
 
   const [dailyActivity, setDailyActivity] = useState<DailyActivity[]>([]);
@@ -43,6 +43,8 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
   const [repProfile, setRepProfile] = useState<RepProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('shops');
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [shopsDisplayLimit, setShopsDisplayLimit] = useState(PAGE_SIZE);
@@ -71,19 +73,47 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
     });
   }, [repName, fetchRepDailyActivity, fetchRepShopVisits, fetchRepRoutes, fetchRepProfile]);
 
-  const filteredShops = useMemo(() => {
-    if (dateFilter === 'all') return shopVisits;
-    const now = new Date();
-    const cutoff = dateFilter === 'week'
-      ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      : dateFilter === 'month'
-      ? new Date(now.getFullYear(), now.getMonth(), 1)
-      : null;
-    if (!cutoff) return shopVisits;
-    return shopVisits.filter(s => new Date(s.check_in) >= cutoff);
-  }, [shopVisits, dateFilter]);
+  // Sync custom date range to AppContext so the map shows the day route
+  useEffect(() => {
+    if (dateFilter === 'custom' && customFrom && customTo) {
+      setRepDateFrom(customFrom);
+      setRepDateTo(customTo);
+    } else if (dateFilter === 'custom' && customFrom && !customTo) {
+      // Single day: set to = from
+      setRepDateFrom(customFrom);
+      setRepDateTo(customFrom);
+    } else {
+      setRepDateFrom(null);
+      setRepDateTo(null);
+    }
+  }, [dateFilter, customFrom, customTo, setRepDateFrom, setRepDateTo]);
 
-  useEffect(() => { setShopsDisplayLimit(PAGE_SIZE); }, [dateFilter]);
+  // Clear context dates when panel unmounts
+  useEffect(() => () => { setRepDateFrom(null); setRepDateTo(null); }, [setRepDateFrom, setRepDateTo]);
+
+  const filteredShops = useMemo(() => {
+    const now = new Date();
+    if (dateFilter === 'week') {
+      const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return shopVisits.filter(s => new Date(s.check_in) >= cutoff);
+    }
+    if (dateFilter === 'month') {
+      const cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+      return shopVisits.filter(s => new Date(s.check_in) >= cutoff);
+    }
+    if (dateFilter === 'custom') {
+      const from = customFrom ? new Date(customFrom) : null;
+      const to = customTo ? new Date(customTo + 'T23:59:59') : (customFrom ? new Date(customFrom + 'T23:59:59') : null);
+      if (!from) return shopVisits;
+      return shopVisits.filter(s => {
+        const d = new Date(s.check_in);
+        return d >= from && (!to || d <= to);
+      });
+    }
+    return shopVisits;
+  }, [shopVisits, dateFilter, customFrom, customTo]);
+
+  useEffect(() => { setShopsDisplayLimit(PAGE_SIZE); }, [dateFilter, customFrom, customTo]);
 
   // FIX 6b: always show true unique shop count from rep_profiles for all-time
   const uniqueShopCount = useMemo(() => {
@@ -354,27 +384,82 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
       </div>
 
       {/* Date filter chips */}
-      <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)', display: 'flex', gap: 6, flexShrink: 0 }}>
-        {(['all', 'month', 'week'] as DateFilter[]).map(f => (
-          <button
-            key={f}
-            onClick={() => setDateFilter(f)}
-            style={{
-              padding: '3px 10px',
-              borderRadius: 20,
-              border: `1px solid ${dateFilter === f ? '#1E3A5F' : 'rgba(0,0,0,0.1)'}`,
-              background: dateFilter === f ? '#1E3A5F' : 'transparent',
-              color: dateFilter === f ? '#FFFFFF' : '#6B7280',
-              fontSize: 10,
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontFamily: 'Inter, system-ui, sans-serif',
-              textTransform: 'capitalize',
-            }}
-          >
-            {f === 'all' ? 'All time' : f === 'month' ? 'This month' : 'This week'}
-          </button>
-        ))}
+      <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.08)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(['all', 'month', 'week', 'custom'] as DateFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setDateFilter(f)}
+              style={{
+                padding: '3px 10px',
+                borderRadius: 20,
+                border: `1px solid ${dateFilter === f ? '#1E3A5F' : 'rgba(0,0,0,0.1)'}`,
+                background: dateFilter === f ? '#1E3A5F' : 'transparent',
+                color: dateFilter === f ? '#FFFFFF' : '#6B7280',
+                fontSize: 10,
+                fontWeight: 500,
+                cursor: 'pointer',
+                fontFamily: 'Inter, system-ui, sans-serif',
+              }}
+            >
+              {f === 'all' ? 'All time' : f === 'month' ? 'This month' : f === 'week' ? 'This week' : 'Custom date'}
+            </button>
+          ))}
+        </div>
+
+        {/* Custom date range picker */}
+        {dateFilter === 'custom' && (
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={e => setCustomFrom(e.target.value)}
+              style={{
+                flex: 1,
+                border: '1px solid rgba(0,0,0,0.15)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: 11,
+                fontFamily: 'Inter, system-ui, sans-serif',
+                color: '#1E3A5F',
+                outline: 'none',
+                minWidth: 0,
+              }}
+            />
+            <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>→</span>
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom || undefined}
+              onChange={e => setCustomTo(e.target.value)}
+              style={{
+                flex: 1,
+                border: '1px solid rgba(0,0,0,0.15)',
+                borderRadius: 6,
+                padding: '4px 8px',
+                fontSize: 11,
+                fontFamily: 'Inter, system-ui, sans-serif',
+                color: '#1E3A5F',
+                outline: 'none',
+                minWidth: 0,
+              }}
+            />
+            {(customFrom || customTo) && (
+              <button
+                onClick={() => { setCustomFrom(''); setCustomTo(''); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 14, padding: '0 2px', flexShrink: 0 }}
+                title="Clear dates"
+              >×</button>
+            )}
+          </div>
+        )}
+        {dateFilter === 'custom' && customFrom && (
+          <div style={{ marginTop: 4, fontSize: 10, color: '#6B7280' }}>
+            {!customTo || customTo === customFrom
+              ? `Showing ${customFrom} · map shows route for this day`
+              : `Showing ${customFrom} → ${customTo} · map shows route for this period`}
+          </div>
+        )}
       </div>
 
       {/* View tabs */}
