@@ -121,17 +121,60 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
     return new Set(filteredShops.map(s => s.shop_id)).size;
   }, [dateFilter, repProfile, repData, filteredShops]);
 
+  // Routes covered in the active date filter window (derived from shop visit route_ids)
+  const activeRouteIds = useMemo(() => {
+    if (dateFilter === 'all') return null;
+    const ids = new Set<string>();
+    filteredShops.forEach(s => { if (s.route_id) ids.add(s.route_id); });
+    return ids.size > 0 ? ids : null;
+  }, [dateFilter, filteredShops]);
+
+  // Routes covered per calendar date (for day expansion)
+  const routesByDate = useMemo(() => {
+    const map: Record<string, Array<{ route_id: string; route_name: string }>> = {};
+    shopVisits.forEach(s => {
+      if (!s.route_id || !s.route_name) return;
+      const date = s.check_in.substring(0, 10);
+      if (!map[date]) map[date] = [];
+      if (!map[date].some(r => r.route_id === s.route_id)) {
+        map[date].push({ route_id: s.route_id, route_name: s.route_name });
+      }
+    });
+    return map;
+  }, [shopVisits]);
+
   // FIX 3: sorted routes for most/least visited sections
   const sortedRoutes = useMemo(() =>
     [...repRoutes].sort((a, b) => b.visits - a.visits),
     [repRoutes]
   );
-  const routeTotal = sortedRoutes.length;
-  const topRoutes = sortedRoutes.slice(0, Math.min(3, routeTotal));
+
+  // Filter routes by date window when active
+  const displayRoutes = useMemo(() => {
+    if (!activeRouteIds) return sortedRoutes;
+    return sortedRoutes.filter(r => activeRouteIds.has(r.route_id));
+  }, [sortedRoutes, activeRouteIds]);
+
+  const routeTotal = displayRoutes.length;
+  const topRoutes = displayRoutes.slice(0, Math.min(3, routeTotal));
   const leastCount = routeTotal > 3 ? Math.min(3, routeTotal - 3) : 0;
-  const leastRoutes = leastCount > 0 ? sortedRoutes.slice(routeTotal - leastCount) : [];
-  const middleRoutes = routeTotal > 6 ? sortedRoutes.slice(3, routeTotal - 3) : [];
-  const maxRouteVisits = sortedRoutes[0]?.visits || 1;
+  const leastRoutes = leastCount > 0 ? displayRoutes.slice(routeTotal - leastCount) : [];
+  const middleRoutes = routeTotal > 6 ? displayRoutes.slice(3, routeTotal - 3) : [];
+  const maxRouteVisits = displayRoutes[0]?.visits || 1;
+
+  // Click a day row to set it as the active date filter (toggle)
+  const handleDaySelect = (date: string) => {
+    const isSelected = dateFilter === 'custom' && customFrom === date && (!customTo || customTo === date);
+    if (isSelected) {
+      setCustomFrom('');
+      setCustomTo('');
+      setDateFilter('all');
+    } else {
+      setDateFilter('custom');
+      setCustomFrom(date);
+      setCustomTo(date);
+    }
+  };
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '—';
@@ -484,7 +527,7 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
             }}
           >
             {/* FIX 6b: always show TRUE unique shop count, not row count */}
-            {v === 'shops' ? `Shops (${uniqueShopCount ?? '…'})` : v === 'days' ? `Days (${dailyActivity.length})` : `Routes (${repRoutes.length})`}
+            {v === 'shops' ? `Shops (${uniqueShopCount ?? '…'})` : v === 'days' ? `Days (${dailyActivity.length})` : `Routes (${activeRouteIds ? `${routeTotal}/${repRoutes.length}` : repRoutes.length})`}
           </button>
         ))}
       </div>
@@ -590,52 +633,94 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280' }}>No daily activity found</div>
               </div>
             ) : (
-              dailyActivity.map(day => (
-                <div key={day.date} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                  <button
-                    onClick={() => {
-                      const newSet = new Set(expandedDays);
-                      if (newSet.has(day.date)) newSet.delete(day.date);
-                      else newSet.add(day.date);
-                      setExpandedDays(newSet);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '8px 10px',
-                      background: 'transparent',
-                      border: 'none',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      fontFamily: 'Inter, system-ui, sans-serif',
-                    }}
-                  >
-                    {expandedDays.has(day.date) ? <ChevronDown size={12} color="#9CA3AF" /> : <ChevronRight size={12} color="#9CA3AF" />}
-                    <div style={{ flex: 1, textAlign: 'left' }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#1E3A5F' }}>
-                        {new Date(day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                      </span>
+              dailyActivity.map(day => {
+                const isSelected = dateFilter === 'custom' && customFrom === day.date && (!customTo || customTo === day.date);
+                const dayRoutes = routesByDate[day.date] || [];
+                return (
+                  <div key={day.date} style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', background: isSelected ? `${groupColor}0D` : 'transparent' }}>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      {/* Expand/collapse */}
+                      <button
+                        onClick={() => {
+                          const newSet = new Set(expandedDays);
+                          if (newSet.has(day.date)) newSet.delete(day.date);
+                          else newSet.add(day.date);
+                          setExpandedDays(newSet);
+                        }}
+                        style={{ padding: '8px 4px 8px 10px', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        {expandedDays.has(day.date) ? <ChevronDown size={12} color="#9CA3AF" /> : <ChevronRight size={12} color="#9CA3AF" />}
+                      </button>
+
+                      {/* Day label + stats — clicking sets date filter */}
+                      <button
+                        onClick={() => handleDaySelect(day.date)}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px 8px 4px',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          fontFamily: 'Inter, system-ui, sans-serif',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: isSelected ? groupColor : '#1E3A5F' }}>
+                            {new Date(day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </span>
+                          {isSelected && (
+                            <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: groupColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                              On map
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                          <span style={{ fontSize: 11, color: '#6B7280' }}>
+                            <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{day.visits_that_day}</span> visits
+                          </span>
+                          <span style={{ fontSize: 11, color: '#6B7280' }}>
+                            <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{day.shops_that_day}</span> shops
+                          </span>
+                        </div>
+                      </button>
                     </div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <span style={{ fontSize: 11, color: '#6B7280' }}>
-                        <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{day.visits_that_day}</span> visits
-                      </span>
-                      <span style={{ fontSize: 11, color: '#6B7280' }}>
-                        <span style={{ fontWeight: 600, color: '#1E3A5F' }}>{day.shops_that_day}</span> shops
-                      </span>
-                    </div>
-                  </button>
-                  {expandedDays.has(day.date) && (
-                    <div style={{ padding: '0 10px 8px 30px' }}>
-                      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6B7280' }}>
-                        <span>Start: <strong style={{ color: '#1E3A5F' }}>{day.day_start ? formatTime(day.date + 'T' + day.day_start) : '—'}</strong></span>
-                        <span>End: <strong style={{ color: '#1E3A5F' }}>{day.day_end ? formatTime(day.date + 'T' + day.day_end) : '—'}</strong></span>
+
+                    {expandedDays.has(day.date) && (
+                      <div style={{ padding: '0 10px 10px 30px' }}>
+                        <div style={{ display: 'flex', gap: 16, fontSize: 11, color: '#6B7280', marginBottom: dayRoutes.length > 0 ? 6 : 0 }}>
+                          <span>Start: <strong style={{ color: '#1E3A5F' }}>{day.day_start ? formatTime(day.date + 'T' + day.day_start) : '—'}</strong></span>
+                          <span>End: <strong style={{ color: '#1E3A5F' }}>{day.day_end ? formatTime(day.date + 'T' + day.day_end) : '—'}</strong></span>
+                        </div>
+                        {dayRoutes.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                            {dayRoutes.map(r => (
+                              <span
+                                key={r.route_id}
+                                onClick={() => { handleDaySelect(day.date); setFilters(prev => ({ ...prev, route: r.route_id })); }}
+                                title={`Filter by route: ${r.route_name}`}
+                                style={{
+                                  fontSize: 10, fontWeight: 600,
+                                  padding: '2px 7px', borderRadius: 10,
+                                  background: isSelected ? groupColor : '#F0F4FF',
+                                  color: isSelected ? '#fff' : '#1E3A5F',
+                                  cursor: 'pointer',
+                                  border: `1px solid ${isSelected ? groupColor : '#C7D7F9'}`,
+                                }}
+                              >
+                                {r.route_name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))
+                    )}
+                  </div>
+                );
+              })
             )}
           </>
         ) : (
@@ -648,6 +733,33 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
               </div>
             ) : (
               <>
+                {/* Date filter banner */}
+                {activeRouteIds && (
+                  <div style={{
+                    padding: '6px 10px', background: `${groupColor}12`,
+                    borderBottom: `1px solid ${groupColor}30`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: groupColor }}>
+                      Filtered: {customFrom === customTo ? customFrom : `${customFrom} → ${customTo}`} · {routeTotal} route{routeTotal !== 1 ? 's' : ''}
+                    </span>
+                    <button
+                      onClick={() => { setDateFilter('all'); setCustomFrom(''); setCustomTo(''); }}
+                      style={{ fontSize: 10, color: groupColor, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'Inter, system-ui, sans-serif' }}
+                    >
+                      Clear ×
+                    </button>
+                  </div>
+                )}
+                {displayRoutes.length === 0 && activeRouteIds ? (
+                  <div style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>
+                    <div style={{ fontSize: 24, marginBottom: 8 }}>📍</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', marginBottom: 4 }}>No routes on this day</div>
+                    <button onClick={() => { setDateFilter('all'); setCustomFrom(''); setCustomTo(''); }} style={{ fontSize: 11, color: '#1565C0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif', textDecoration: 'underline' }}>
+                      Show all routes
+                    </button>
+                  </div>
+                ) : null}
                 {/* Section 1: Most Visited Routes */}
                 <div style={{ padding: '6px 10px 4px', background: '#FFFBEB', borderBottom: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <Trophy size={12} color="#92400E" />

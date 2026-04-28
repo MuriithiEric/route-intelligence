@@ -22,6 +22,8 @@ function mapShopRow(row: Record<string, unknown>): ShopVisitRow {
     visit_count: (vf?.visit_count as number) || 1,
     first_visit: (vf?.first_visit as string) || row.check_in as string,
     last_visit: (vf?.last_visit as string) || row.check_in as string,
+    route_id: row.route_id as string | undefined,
+    route_name: row.route_name as string | undefined,
   };
 }
 
@@ -116,6 +118,8 @@ export function useMapData() {
           region,
           check_in,
           duration,
+          route_id,
+          route_name,
           customers!left(cat, tier),
           visit_frequency!left(visit_count, first_visit, last_visit)
         `)
@@ -125,7 +129,7 @@ export function useMapData() {
       if (error) {
         const { data: visitsData, error: vErr } = await supabase
           .from('visits')
-          .select('shop_id,shop_name,region,check_in,duration')
+          .select('shop_id,shop_name,region,check_in,duration,route_id,route_name')
           .eq('rep_name', repName)
           .order('check_in', { ascending: false });
         if (vErr) throw vErr;
@@ -140,6 +144,8 @@ export function useMapData() {
           visit_count: 1,
           first_visit: v.check_in as string,
           last_visit: v.check_in as string,
+          route_id: v.route_id as string | undefined,
+          route_name: v.route_name as string | undefined,
         }));
       }
 
@@ -161,6 +167,8 @@ export function useMapData() {
           region,
           check_in,
           duration,
+          route_id,
+          route_name,
           customers!left(cat, tier),
           visit_frequency!left(visit_count, first_visit, last_visit)
         `)

@@ -221,4 +221,6 @@ export interface ShopVisitRow {
   visit_count: number;
   first_visit: string;
   last_visit: string;
+  route_id?: string;
+  route_name?: string;
 }
