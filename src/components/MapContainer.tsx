@@ -693,6 +693,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
   const [universeCount, setUniverseCount] = useState<number | null>(null);
   const [universeLoading, setUniverseLoading] = useState(false);
   const [universeLoadedCount, setUniverseLoadedCount] = useState(0);
+  const [universeTotal, setUniverseTotal] = useState<number | null>(null);
   const [universeTierCounts, setUniverseTierCounts] = useState<Record<string, number>>({});
 
   const repColor = useMemo(() => {
@@ -740,6 +741,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
       setUniverseCount(null);
       setUniverseLoading(false);
       setUniverseLoadedCount(0);
+      setUniverseTotal(null);
     }
   }, [layers.customerUniverse]);
 
@@ -878,8 +880,11 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
         }}>
           {universeLoading ? (
             <>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C9963E', display: 'inline-block', animation: 'pulse 1s infinite' }} />
-              <span>Loading… {universeLoadedCount.toLocaleString()}</span>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C9963E', display: 'inline-block' }} />
+              <span>
+                Loading… {universeLoadedCount.toLocaleString()}
+                {universeTotal ? ` / ${universeTotal.toLocaleString()}` : ''}
+              </span>
             </>
           ) : universeCount !== null ? (
             <>
@@ -894,13 +899,8 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
 
       <LeafletMap center={CENTER} zoom={7} style={{ width: '100%', height: '100%' }} zoomControl preferCanvas>
         <TileLayer
-          key={layers.customerUniverse ? 'carto' : 'osm'}
-          url={layers.customerUniverse
-            ? 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-            : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'}
-          attribution={layers.customerUniverse
-            ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
 
         <MapEventListener onZoomChange={setZoom} />
@@ -916,12 +916,14 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
             tierVisibility={layers.tierVisibility}
             onCountChange={setUniverseCount}
             onLoadProgress={(loaded, total) => {
-              if (total === null) {
+              if (total === null || loaded < total) {
                 setUniverseLoading(true);
                 setUniverseLoadedCount(loaded);
+                if (total !== null) setUniverseTotal(total);
               } else {
                 setUniverseLoading(false);
                 setUniverseLoadedCount(loaded);
+                setUniverseTotal(total);
               }
             }}
             onTierCounts={setUniverseTierCounts}

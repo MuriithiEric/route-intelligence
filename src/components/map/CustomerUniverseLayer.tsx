@@ -176,22 +176,40 @@ export default function CustomerUniverseLayer({
 
     try {
       const PAGE = 1000;
-      let from = 0;
-      const raw: Array<{ id: string; name: string; cat: string; lat: number; lng: number; last_visit: string | null }> = [];
+      const CONCURRENCY = 10; // fire 10 pages in parallel per batch
 
-      while (true) {
-        const { data, error } = await supabase
-          .from('customers')
-          .select('id,name,cat,lat,lng,last_visit')
-          .not('lat', 'is', null)
-          .not('lng', 'is', null)
-          .range(from, from + PAGE - 1);
+      type RawRow = { id: string; name: string; cat: string; lat: number; lng: number; last_visit: string | null };
 
-        if (error || !data || data.length === 0) break;
-        raw.push(...(data as typeof raw));
-        from += PAGE;
-        onProgressRef.current?.(raw.length, null);
-        if (data.length < PAGE) break;
+      // Get total count first so we can show X / Y progress and calculate pages
+      const { count: totalCount } = await supabase
+        .from('customers')
+        .select('*', { count: 'exact', head: true })
+        .not('lat', 'is', null)
+        .not('lng', 'is', null);
+
+      const total = totalCount ?? 80000;
+      const numPages = Math.ceil(total / PAGE);
+      onProgressRef.current?.(0, total);
+
+      const raw: RawRow[] = [];
+
+      for (let batchStart = 0; batchStart < numPages; batchStart += CONCURRENCY) {
+        const batchEnd = Math.min(batchStart + CONCURRENCY, numPages);
+        const pagePromises = Array.from({ length: batchEnd - batchStart }, (_, i) => {
+          const page = batchStart + i;
+          return supabase
+            .from('customers')
+            .select('id,name,cat,lat,lng,last_visit')
+            .not('lat', 'is', null)
+            .not('lng', 'is', null)
+            .range(page * PAGE, (page + 1) * PAGE - 1);
+        });
+
+        const results = await Promise.all(pagePromises);
+        for (const { data } of results) {
+          if (data) raw.push(...(data as RawRow[]));
+        }
+        onProgressRef.current?.(raw.length, total);
       }
 
       _globalCache.customers = raw.map(c => ({
