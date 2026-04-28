@@ -9,10 +9,11 @@ interface Message {
 }
 
 const DEFAULT_CHIPS = [
-  'Which rep has lowest coverage?',
-  'Who is the top performer?',
-  'Which region needs attention?',
-  'Show reps with under 50 shops visited',
+  'Who has the lowest coverage among all reps?',
+  'Which reps have been inactive in the last 30 days?',
+  'Show all BIDCO distributors and when they were last visited',
+  'Which region has the weakest performance?',
+  'Who visits the most unique customers per day?',
 ];
 
 interface AskAIProps {
@@ -30,47 +31,73 @@ function buildContext(
 ) {
   const lines: string[] = [];
 
-  lines.push('You are a Kenya field operations analyst for BIDCO Route Intelligence. Answer questions using the real data below. Be concise and data-focused. When listing reps or rankings, use the actual numbers provided.');
+  lines.push('You are a Kenya field operations analyst for BIDCO Route Intelligence.');
+  lines.push('Answer questions using the pre-loaded data below AND the database tools available to you.');
+  lines.push('');
+  lines.push('## How to use tools');
+  lines.push('- Use query_rep_performance, query_visits, query_daily_activity, query_visit_frequency, query_routes, query_customers, query_region_breakdown to fetch live data.');
+  lines.push('- When querying by rep, ALWAYS use the raw_name (shown in brackets below) — not the display name — for query_visits, query_daily_activity, query_visit_frequency.');
+  lines.push('- For specific date ranges, customer drilldowns, visit history, or questions the summary below cannot answer, use the tools.');
+  lines.push('- Be concise. Lead with the direct answer, then supporting data.');
+  lines.push('');
+  lines.push('## Key Facts');
+  lines.push('- Total active outlets in Kenya: 86,148 (coverage denominator)');
+  lines.push('- Modern Trade customers are stored as cat=SUPERMARKET in the database');
+  lines.push('- DISTRIBUTOR (cat=DISTRIBUTOR) = 157 BIDCO FMCG distributors');
+  lines.push('- DISTRIBUTOR - FEEDS (cat=DISTRIBUTOR - FEEDS) = 946 agricultural feeds distributors, separate from BIDCO');
+  lines.push('- last_visit = field ops check-in date; last_sale = ERP sales order date. These come from different systems.');
   lines.push('');
 
   // Customer universe
-  lines.push('## Customer Universe');
   if (customerCounts) {
-    lines.push(`Total customers: ${customerCounts.total.toLocaleString()}`);
-    lines.push(`Distributors: ${customerCounts.DISTRIBUTOR} | Key Accounts: ${customerCounts['KEY ACCOUNT']} | Hubs: ${customerCounts.HUB} | Stockists: ${customerCounts.STOCKIST} | Modern Trade: ${customerCounts['MODERN TRADE']} | General Trade: ${customerCounts['GENERAL TRADE']}`);
+    lines.push('## Customer Universe (live counts)');
+    lines.push(`Total: ${customerCounts.total.toLocaleString()} | Distributors (BIDCO): ${customerCounts.DISTRIBUTOR} | Key Accounts: ${customerCounts['KEY ACCOUNT']} | Hubs: ${customerCounts.HUB} | Stockists: ${customerCounts.STOCKIST} | Modern Trade: ${customerCounts['MODERN TRADE']} | General Trade: ${customerCounts['GENERAL TRADE']} | Dist. Feeds: ${customerCounts['DISTRIBUTOR - FEEDS']}`);
+    lines.push('');
   }
-  lines.push('');
 
   // User groups
   if (userGroups.length > 0) {
-    lines.push('## User Groups');
+    lines.push('## User Groups (TTM)');
     userGroups.forEach(g => {
       lines.push(`${g.category}: ${g.active_users} reps, ${g.total_visits.toLocaleString()} visits, ${g.unique_shops.toLocaleString()} shops, ${g.coverage_pct.toFixed(1)}% coverage`);
     });
     lines.push('');
   }
 
-  // All rep performance
+  // All rep performance — include raw_name so Claude can use it in tool calls
   if (ttmSummary.length > 0) {
-    lines.push('## All Rep Performance (TTM)');
+    lines.push('## All Rep Performance (TTM — Trailing Twelve Months)');
+    lines.push('Format: rank. Display Name [raw_name] (role, region): visits, shops, coverage, v/day, field days, avg min/visit, last active');
     const sorted = [...ttmSummary].sort((a, b) => b.total_visits - a.total_visits);
     sorted.forEach((r, i) => {
-      lines.push(`${i + 1}. ${r.name} (${r.role}, ${r.primary_region}): ${r.total_visits} visits, ${r.unique_shops} shops, ${r.unique_routes} routes, ${r.coverage_pct.toFixed(1)}% coverage, ${r.visits_per_day.toFixed(1)} v/day, ${r.field_days} field days, avg ${r.avg_duration.toFixed(0)} min/visit, last active ${r.last_active}`);
+      lines.push(
+        `${i + 1}. ${r.name} [${r.raw_name}] (${r.role}, ${r.primary_region}): ` +
+        `${r.total_visits} visits, ${r.unique_shops} shops, ${r.unique_routes} routes, ` +
+        `${r.coverage_pct.toFixed(1)}% coverage, ${r.visits_per_day.toFixed(1)} v/day, ` +
+        `${r.field_days} field days, avg ${r.avg_duration.toFixed(0)} min/visit, ` +
+        `last active ${r.last_active}${r.rep_status === 'inactive' ? ' [INACTIVE]' : ''}`
+      );
     });
     lines.push('');
   }
 
-  // Current view context
+  // Current dashboard context
   lines.push('## Current Dashboard State');
   if (selectedRep) {
     const rep = ttmSummary.find(r => r.raw_name === selectedRep);
     if (rep) {
-      lines.push(`Selected rep: ${rep.name} (${rep.role}, ${rep.primary_region}) — ${rep.total_visits} visits, ${rep.unique_shops} shops, ${rep.coverage_pct.toFixed(1)}% coverage`);
+      lines.push(`User is viewing rep: ${rep.name} [raw_name: ${rep.raw_name}] (${rep.role}, ${rep.primary_region}) — ${rep.total_visits} visits, ${rep.unique_shops} shops, ${rep.coverage_pct.toFixed(1)}% coverage`);
     }
   } else if (filters.userGroup) {
     lines.push(`Filtered to user group: ${filters.userGroup}`);
   } else {
     lines.push('Viewing all field staff across Kenya.');
+  }
+  if (filters.dateFrom || filters.dateTo) {
+    lines.push(`Active date filter: ${filters.dateFrom} to ${filters.dateTo}`);
+  }
+  if (filters.region) {
+    lines.push(`Active region filter: ${filters.region}`);
   }
 
   return lines.join('\n');
@@ -120,8 +147,8 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 2048,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 8192,
           system: contextMessage,
           messages: history.map(m => ({ role: m.role, content: m.content })),
         }),
@@ -136,12 +163,11 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
       const assistantText = data.content?.[0]?.text || 'No response.';
       setMessages(prev => [...prev, { role: 'assistant', content: assistantText }]);
 
-      // Generate follow-up chips based on context
       setFollowUpChips([
-        'Show me the top 5 reps',
-        'Which region needs attention?',
-        'Coverage trend this month?',
-        'Suggest an action plan',
+        'Drill into their daily activity',
+        'Which customers have they not visited?',
+        'Compare with the top performer',
+        'What routes do they cover?',
       ]);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Unknown error';
