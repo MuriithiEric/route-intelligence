@@ -64,20 +64,19 @@ function buildContext(
     lines.push('');
   }
 
-  // All rep performance — include raw_name so Claude can use it in tool calls
+  // Top 20 reps by visits — use tools for full list or specific lookups
   if (ttmSummary.length > 0) {
-    lines.push('## All Rep Performance (TTM — Trailing Twelve Months)');
-    lines.push('Format: rank. Display Name [raw_name] (role, region): visits, shops, coverage, v/day, field days, avg min/visit, last active');
-    const sorted = [...ttmSummary].sort((a, b) => b.total_visits - a.total_visits);
+    lines.push('## Top 20 Reps by Visits (TTM) — use query tools for full list');
+    lines.push('Format: Display Name [raw_name] (role, region): visits, shops, coverage%, last active');
+    const sorted = [...ttmSummary].sort((a, b) => b.total_visits - a.total_visits).slice(0, 20);
     sorted.forEach((r, i) => {
       lines.push(
         `${i + 1}. ${r.name} [${r.raw_name}] (${r.role}, ${r.primary_region}): ` +
-        `${r.total_visits} visits, ${r.unique_shops} shops, ${r.unique_routes} routes, ` +
-        `${r.coverage_pct.toFixed(1)}% coverage, ${r.visits_per_day.toFixed(1)} v/day, ` +
-        `${r.field_days} field days, avg ${r.avg_duration.toFixed(0)} min/visit, ` +
+        `${r.total_visits} visits, ${r.unique_shops} shops, ${r.coverage_pct.toFixed(1)}% cov, ` +
         `last active ${r.last_active}${r.rep_status === 'inactive' ? ' [INACTIVE]' : ''}`
       );
     });
+    lines.push(`...and ${ttmSummary.length - 20} more reps — use query_rep_performance to get the full list.`);
     lines.push('');
   }
 
@@ -140,7 +139,8 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
     setLoading(true);
     setFollowUpChips([]);
 
-    const history = [...messages, userMsg];
+    const allMessages = [...messages, userMsg];
+    const recentMessages = allMessages.slice(-6);
 
     try {
       const res = await fetch('/api/chat', {
@@ -150,7 +150,7 @@ export default function AskAI({ ttmSummary = [], userGroups = [], customerCounts
           model: 'claude-sonnet-4-6',
           max_tokens: 8192,
           system: contextMessage,
-          messages: history.map(m => ({ role: m.role, content: m.content })),
+          messages: recentMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       });
 
