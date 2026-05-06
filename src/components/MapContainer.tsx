@@ -372,9 +372,11 @@ function DayRouteLayer({ visits, repColor }: { visits: Visit[]; repColor: string
 // ─────────────────────────────────────────────────────────────────────────────
 function RouteNeighbourhoodLayer({
   dateVisits,
+  repColor,
   onLoad,
 }: {
   dateVisits: Visit[];
+  repColor: string;
   onLoad?: (count: number) => void;
 }) {
   const { fetchCustomersInBounds } = useMapData();
@@ -425,11 +427,11 @@ function RouteNeighbourhoodLayer({
             key={`rn-${c.id}`}
             center={[c.lat, c.lng] as LatLngTuple}
             radius={radius}
-            pathOptions={{ color, fillColor: '#FFFFFF', fillOpacity: 0.9, weight: 1.5, dashArray: '4 3' }}
+            pathOptions={{ color: repColor, fillColor: '#FFFFFF', fillOpacity: 0.85, weight: 1.5, dashArray: '4 3' }}
           >
             <Tooltip direction="top" offset={[0, -radius]}>
               <span style={{ fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }}>
-                {c.name} · {c.cat} · Not visited this day
+                {c.name} · {c.cat} · Nearby — not visited
               </span>
             </Tooltip>
             <Popup minWidth={200} maxWidth={260}>
@@ -816,7 +818,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
               <span style={{ fontSize: 10, color: '#374151' }}>Visited this period</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', border: '1.5px dashed #EF4444', display: 'inline-block', flexShrink: 0 }} />
+              <span style={{ width: 10, height: 10, borderRadius: '50%', border: `1.5px dashed ${repColor}`, display: 'inline-block', flexShrink: 0 }} />
               <span style={{ fontSize: 10, color: '#374151' }}>Nearby — not visited</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -945,7 +947,7 @@ export default function MapContainer({ ttmSummary }: MapContainerProps) {
 
         {/* Unvisited customers in route corridor */}
         {selectedRep && hasDateFilter && dateVisits.length > 0 && (
-          <RouteNeighbourhoodLayer dateVisits={dateVisits} onLoad={setNearbyUnvisitedCount} />
+          <RouteNeighbourhoodLayer dateVisits={dateVisits} repColor={repColor} onLoad={setNearbyUnvisitedCount} />
         )}
 
         {/* Unvisited outlets layer */}

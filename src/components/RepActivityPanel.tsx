@@ -196,20 +196,32 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
     URL.revokeObjectURL(url);
   };
 
-  // FIX 1: file names use _all suffix
   const fileBase = repName.replace(/\s+/g, '_');
 
-  // FIX 1: shops CSV fetches ALL visits via paginated query (no row cap)
+  const fileSuffix = useMemo(() => {
+    if (dateFilter === 'all') return 'all';
+    if (dateFilter === 'week') return 'week';
+    if (dateFilter === 'month') return 'month';
+    if (customFrom) return customTo && customTo !== customFrom ? `${customFrom}_to_${customTo}` : customFrom;
+    return 'filtered';
+  }, [dateFilter, customFrom, customTo]);
+
   const downloadShopsCSV = useCallback(async () => {
     setCsvLoading(true);
     try {
       const allShops = await fetchAllRepShopVisitsForCSV(repName);
+      const now = new Date();
       const source = dateFilter === 'all' ? allShops : allShops.filter(s => {
-        const now = new Date();
-        const cutoff = dateFilter === 'week'
-          ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-          : new Date(now.getFullYear(), now.getMonth(), 1);
-        return new Date(s.check_in) >= cutoff;
+        if (dateFilter === 'week') return new Date(s.check_in) >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        if (dateFilter === 'month') return new Date(s.check_in) >= new Date(now.getFullYear(), now.getMonth(), 1);
+        if (dateFilter === 'custom') {
+          const from = customFrom ? new Date(customFrom) : null;
+          const to = customTo ? new Date(customTo + 'T23:59:59') : (customFrom ? new Date(customFrom + 'T23:59:59') : null);
+          if (!from) return true;
+          const d = new Date(s.check_in);
+          return d >= from && (!to || d <= to);
+        }
+        return true;
       });
       const headers = ['Shop Name', 'Tier', 'Category', 'Region', 'Visit Date', 'Time', 'Duration (min)', 'Visit Count'];
       const rows = source.map(s => [
@@ -222,34 +234,41 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
         s.duration || '',
         s.visit_count,
       ]);
-      triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_shops_all.csv`);
+      triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_shops_${fileSuffix}.csv`);
     } finally {
       setCsvLoading(false);
     }
-  }, [repName, dateFilter, fetchAllRepShopVisitsForCSV, fileBase]);
+  }, [repName, dateFilter, customFrom, customTo, fetchAllRepShopVisitsForCSV, fileBase, fileSuffix]);
 
   const downloadDaysCSV = useCallback(() => {
+    const now = new Date();
+    const filtered = dateFilter === 'all' ? dailyActivity : dailyActivity.filter(d => {
+      const date = new Date(d.date + 'T00:00:00');
+      if (dateFilter === 'week') return date >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (dateFilter === 'month') return date >= new Date(now.getFullYear(), now.getMonth(), 1);
+      if (dateFilter === 'custom') {
+        const from = customFrom ? new Date(customFrom) : null;
+        const to = customTo ? new Date(customTo) : (customFrom ? new Date(customFrom) : null);
+        if (!from) return true;
+        return date >= from && (!to || date <= to);
+      }
+      return true;
+    });
     const headers = ['Date', 'Day Start', 'Day End', 'Visits That Day', 'Shops That Day'];
-    const rows = dailyActivity.map(d => [
-      d.date,
-      d.day_start || '',
-      d.day_end || '',
-      d.visits_that_day,
-      d.shops_that_day,
-    ]);
-    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_days_all.csv`);
-  }, [dailyActivity, fileBase]);
+    const rows = filtered.map(d => [d.date, d.day_start || '', d.day_end || '', d.visits_that_day, d.shops_that_day]);
+    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_days_${fileSuffix}.csv`);
+  }, [dailyActivity, dateFilter, customFrom, customTo, fileBase, fileSuffix]);
 
   const downloadRoutesCSV = useCallback(() => {
     const headers = ['Route Name', 'Visits', 'Shops', 'Primary Region'];
-    const rows = sortedRoutes.map(r => [
+    const rows = displayRoutes.map(r => [
       `"${(r.route_name || '').replace(/"/g, '""')}"`,
       r.visits,
       r.shops,
       r.primary_region,
     ]);
-    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_routes_all.csv`);
-  }, [sortedRoutes, fileBase]);
+    triggerDownload([headers.join(','), ...rows.map(r => r.join(','))].join('\n'), `${fileBase}_routes_${fileSuffix}.csv`);
+  }, [displayRoutes, fileBase, fileSuffix]);
 
   const handleDownload = viewMode === 'days' ? downloadDaysCSV
     : viewMode === 'routes' ? downloadRoutesCSV
@@ -845,7 +864,12 @@ export default function RepActivityPanel({ repName, repData, onClose }: RepActiv
           }}
         >
           <Download size={12} />
-          {csvLoading ? 'Preparing CSV…' : 'Download CSV (All Records)'}
+          {csvLoading ? 'Preparing CSV…'
+            : dateFilter === 'all' ? 'Download CSV (All Records)'
+            : dateFilter === 'week' ? 'Download CSV (This Week)'
+            : dateFilter === 'month' ? 'Download CSV (This Month)'
+            : customFrom ? `Download CSV · ${customTo && customTo !== customFrom ? `${customFrom} → ${customTo}` : customFrom}`
+            : 'Download CSV'}
         </button>
       </div>
     </div>
